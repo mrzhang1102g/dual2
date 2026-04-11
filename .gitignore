@@ -1,0 +1,25 @@
+# 忽略的文件夹
+.trae
+bf
+dataset
+model_checkpoints
+model_outputs
+weights
+
+# 其他常见忽略项
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
