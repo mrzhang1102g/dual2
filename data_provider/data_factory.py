@@ -86,6 +86,7 @@ def data_provider(args, flag):
     drop_last = False
     batch_size = args.batch_size
     freq = args.freq
+    split_limit = getattr(args, f"max_{flag.lower()}_samples", -1)
 
     # ===========================================================
     # FIT Fusion（数值 + 文本语义）
@@ -108,6 +109,8 @@ def data_provider(args, flag):
             train_ratio=getattr(args, "train_ratio", 0.7),
             val_ratio=getattr(args, "val_ratio", 0.1),
             test_ratio=getattr(args, "test_ratio", 0.2),
+            max_samples=split_limit,
+            fit_scaler_mode=getattr(args, "fit_scaler_mode", "train_only"),
         )
 
     # ===========================================================
@@ -127,6 +130,8 @@ def data_provider(args, flag):
             train_ratio=getattr(args, "train_ratio", 0.7),
             val_ratio=getattr(args, "val_ratio", 0.1),
             test_ratio=getattr(args, "test_ratio", 0.2),
+            max_samples=split_limit,
+            fit_scaler_mode=getattr(args, "fit_scaler_mode", "train_only"),
         )
 
     # ===========================================================

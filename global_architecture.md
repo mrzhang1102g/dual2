@@ -1,254 +1,390 @@
-# DualSG 项目全局架构
+# FIT Architecture
 
-**最后更新时间**: 2026-04-10 (最新)
+最后更新：2026-04-12
 
-## 项目概述
+## 1. 文档定位
 
-DualSG 是一个基于时间序列的预测模型项目，主要处理两种数据集：FIT（Fashion Industry Trends）和 GeoStyle。项目结合了数值流和文本流的融合模型，旨在提高时间序列预测的准确性。
+这份文档只描述当前仓库里 FIT 相关的真实已实现结构。
 
-## 项目结构
+配套文档：
+- `fit_refactor_worklog.md`：本轮整理进度、真实 smoke 结果、剩余风险。
+- `fit_fusion_redesign.md`：这次 fusion 重写背后的设计原则。
 
-```
-DualSG_refined/
-├── bf/                    # 实验配置脚本（备份）
-├── data_provider/         # 数据加载器模块
-│   ├── data_factory.py           # 数据加载器工厂
-│   ├── data_loader_fit_num.py    # FIT数值流数据加载器
-│   ├── data_loader_fit_num_meta.py  # FIT数值流+元数据数据加载器
-│   ├── data_loader_fit_fusion.py    # FIT融合模型数据加载器
-│   ├── data_loader_geo_num.py    # GeoStyle数值流数据加载器
-│   ├── data_loader_geo_num_meta.py  # GeoStyle数值流+元数据数据加载器
-│   └── data_loader_geo_fusion.py    # GeoStyle融合模型数据加载器
-├── dataset/               # 数据集
-│   ├── FIT_DualSG/               # FIT数据集
-│   └── Geo_DualSG/               # GeoStyle数据集
-├── exp/                   # 实验类模块
-│   ├── exp_basic.py       # 基础实验类
-│   ├── exp_fit_num.py     # FIT纯数值流实验
-│   ├── exp_fit_num_with_meta.py  # FIT数值流+元数据实验
-│   ├── exp_fit_fusion.py  # FIT融合模型实验
-│   ├── exp_geo_num.py     # GeoStyle纯数值流实验
-│   ├── exp_geo_num_with_meta.py  # GeoStyle数值流+元数据实验
-│   └── exp_geo_fusion.py  # GeoStyle融合模型实验
-├── layers/                # 模型层定义
-├── models/                # 模型定义
-│   ├── model_fit_num.py
-│   ├── model_fit_num_with_meta.py
-│   ├── model_fit_fusion.py
-│   ├── model_geo_num.py
-│   ├── model_geo_num_with_meta.py
-│   └── model_geo_fusion.py
-├── utils/                 # 工具函数
-│   ├── logger.py          # 统一日志工具
-│   ├── data_provider_utils.py  # 数据处理工具函数
-│   ├── tools.py           # 其他工具函数
-│   ├── print_args.py      # 参数打印工具
-│   └── masking.py         # 掩码工具
-├── weights/               # 预训练权重
-├── model_outputs/         # 模型输出目录
-├── model_checkpoints/     # 模型检查点目录
-├── run.py                 # 主运行脚本
-├── *.sh                   # 实验脚本（根目录）
-├── global_architecture.md # 全局架构文档
-├── target_planning.md     # 近期目标规划
-└── 审稿意见.md            # 审稿意见
-```
+## 2. 当前 FIT 入口
 
-## 核心模块说明
+统一入口：
+- `run.py`
 
-### 1. 数据加载器模块 (data_provider/)
+### 2.1 task -> experiment
 
-负责加载和预处理FIT和GeoStyle数据集，提供统一的数据接口。
+- `fit_num` -> `exp/exp_fit_num.py`
+- `fit_num_with_meta` -> `exp/exp_fit_num.py`
+- `fit_fusion` -> `exp/exp_fit_fusion.py`
 
-#### 主要组件
-- **data_factory.py**: 数据加载器工厂，根据参数选择合适的数据加载器
-- **数据加载器**: 针对不同数据集和模型类型的数据加载器
-  - FIT系列：处理FIT数据集
-  - GeoStyle系列：处理GeoStyle数据集
-  - 纯数值流：只加载数值数据
-  - 数值流+元数据：加载数值数据和元数据
-  - 融合模型：加载数值数据、元数据和文本数据
+### 2.2 model
 
-#### 数据切分
-- **全量模式**: 使用包含"all"的文件名，内部按70%/10%/20%切分训练/验证/测试集
-- **分离模式**: 使用单独的train/val/test文件
+- `Model_Fit_Num` -> `models/model_fit_num.py`
+- `Model_Fit_Num_With_Meta` -> `models/model_fit_num_with_meta.py`
+- `Model_Fit_Fusion` -> `models/model_fit_fusion.py`
 
-### 2. 实验类模块 (exp/)
+### 2.3 data
 
-负责模型的训练、验证和测试流程。
+- `FIT_Meta` -> `data_provider/data_loader_fit_num_meta.py`
+- `FIT_Fusion` -> `data_provider/data_loader_fit_fusion.py`
 
-#### 主要组件
-- **exp_basic.py**: 基础实验类，提供通用功能
-  - 设备管理（GPU/CPU自动选择）
-  - 模型构建
-  - 统一日志输出
-- **具体实验类**: 针对不同数据集和模型类型的实验类
-  - 实现数据获取、训练、验证、测试等具体逻辑
-  - 处理特定模型的输出和可视化
+## 3. FIT 关键文件
 
-#### 训练流程
-1. 获取训练、验证、测试数据
-2. 构建模型和优化器
-3. 训练循环，每个epoch进行验证
-4. 早停机制
-5. 保存最佳模型检查点
-6. 加载最佳模型进行测试
-7. 生成可视化结果（可选）
+### 3.1 数据层
 
-### 3. 模型模块 (models/)
+- `data_provider/fit_dataset_utils.py`
+- `data_provider/data_loader_fit_num_meta.py`
+- `data_provider/data_loader_fit_fusion.py`
+- `data_provider/data_factory.py`
 
-定义时间序列预测模型的架构。
+### 3.2 实验层
 
-#### 模型类型
-- **纯数值流模型**: 只使用数值时间序列数据
-  - Model_Fit_Num / Model_Geo_Num
-- **数值流+元数据模型**: 使用数值数据和元数据
-  - Model_Fit_Num_With_Meta / Model_Geo_Num_With_Meta
-- **融合模型**: 结合数值流和文本流
-  - Model_Fit_Fusion / Model_Geo_Fusion
-  - 支持direct和residual两种融合方式
+- `exp/exp_fit_num.py`
+- `exp/exp_fit_fusion.py`
 
-### 4. 工具函数模块 (utils/)
+### 3.3 模型层
 
-提供项目通用的工具函数。
+- `models/model_fit_num.py`
+- `models/model_fit_num_with_meta.py`
+- `models/model_fit_fusion.py`
 
-#### 主要工具
-- **logger.py**: 统一日志工具，提供log、log_warning、log_error等函数
-- **data_provider_utils.py**: 数据处理工具函数
-  - is_all_mode: 判断是否是全量文件模式
-  - split_data: 数据切分
-  - build_metadata_maps: 构建元数据映射表
-  - generate_time_features: 生成时间特征
-  - parse_fit_group: 解析FIT group字符串
-- **tools.py**: 其他工具函数，包括可视化
-- **print_args.py**: 参数打印工具，生成格式化的参数表格
-- **masking.py**: 掩码工具
+### 3.4 脚本
 
-### 5. 主运行脚本 (run.py)
+- `fit_halfyear_num.sh`
+- `fit_halfyear_num_with_meta.sh`
+- `fit_oneyear_num.sh`
+- `fit_oneyear_num_with_meta.sh`
+- `fit_fusion_halfyear_direct.sh`
+- `fit_fusion_halfyear_residual.sh`
+- `fit_fusion_oneyear_direct.sh`
+- `fit_fusion_oneyear_residual.sh`
 
-项目的入口点，负责解析命令行参数并启动实验。
+## 4. FIT 数据层
 
-#### 参数分类
-1. **任务基本参数**: task_name, is_training, model_id, model, data
-2. **数据参数**: root_path, data_path, features, target, freq, scale
-3. **时间序列参数**: seq_len, label_len, pred_len
-4. **模型参数**: d_model, d_ff, n_heads, e_layers, d_layers, dropout等
-5. **训练参数**: train_epochs, batch_size, learning_rate, loss, patience等
-6. **融合模型参数**: num_model_path, text_model_path, caption_emb_path等
-7. **GeoStyle特有参数**: use_element, use_group
-8. **可视化与输出配置**: visualize, output_dir, checkpoint_dir
-9. **设备配置**: use_gpu, gpu, gpu_type等
+### 4.1 当前原始样本
 
-#### 流程
-1. 解析命令行参数
-2. 设置随机种子
-3. 初始化设备（GPU/CPU）
-4. 打印参数表格
-5. 创建实验对象
-6. 执行训练或测试
+当前 FIT 原始 json 里会用到：
+- `series`
+- `target`
+- `annotations`
+- `metadata.group`
+- `metadata.element`
+- `metadata.norm`
 
-## 数据流
+### 4.2 FIT 公共数据工具
 
-### 训练流程
-```
-run.py 
-  ↓
-Exp_* (实验类)
-  ↓
-data_factory (数据加载器工厂)
-  ↓
-data_loader_* (数据加载器)
-  ↓
-dataset (数据集)
-  ↓
-model (模型)
-  ↓
-optimizer (优化器)
-  ↓
-loss (损失函数)
-  ↓
-model_checkpoints/ (检查点保存)
-  ↓
-model_outputs/ (结果输出)
-```
+`data_provider/fit_dataset_utils.py` 当前统一负责：
+- `CITY_MAP / GENDER_MAP / AGE_MAP`
+- `group` 解析
+- `element_map`
+- train / val / test split
+- 标准化
+- 时间特征
+- `caption_emb` 对齐
+- 进程内缓存
 
-## 配置规范
+### 4.3 当前 scaler 语义
 
-### 参数命名规范
-- 数值流参数: 使用简洁的命名
-- 融合模型参数: 以fusion_为前缀
-- GeoStyle参数: 保持原有的命名
-- 输出配置: output_dir, checkpoint_dir
+当前支持：
+- `fit_scaler_mode=train_only`
+- `fit_scaler_mode=split_fit`
 
-### 日志输出规范
-- 所有模块使用统一的日志工具
-- 日志级别: info, warning, error
-- 保持日志格式一致
+默认：
+- `train_only`
 
-### 目录规范
-- 模型检查点: model_checkpoints/
-- 模型输出: model_outputs/
-- 可视化结果: model_outputs/{setting}/
-- 结果文件: result.txt
+含义：
+- `train_only`
+  - 只用 train split 拟合 scaler
+  - val/test 共享这一套 scaler
+- `split_fit`
+  - 保留旧行为
+  - train/val/test 各自 fit 各自 split
 
-## 模型配置
+### 4.4 本地 smoke 截断
 
-### FIT数据集
-- **序列长度**: 半年预测 (48-12), 一年预测 (48-24)
-- **频率**: 周 (w)
-- **特点**: 包含元数据（城市、性别、年龄）
+当前支持：
+- `max_train_samples`
+- `max_val_samples`
+- `max_test_samples`
 
-### GeoStyle数据集
-- **序列长度**: 季度预测 (52-26)
-- **频率**: 周 (w)
-- **特点**: 包含元数据（element、group）
+约定：
+- `<= 0` 表示不截断
+- 截断发生在正式 split 之后
+- 默认不会影响服务器正式训练
 
-## 关键技术点
+## 5. FIT 数值流
 
-### 1. GPU自动选择
-- 自动检测可用GPU
-- 选择显存剩余最多的GPU
-- 支持MPS（Apple Silicon）
+### 5.1 fit_num
 
-### 2. 统一日志系统
-- 所有模块使用统一的日志工具
-- 支持不同日志级别
-- 保持日志格式一致
+链路：
 
-### 3. 参数管理
-- run.py集中管理所有参数
-- 设置合理的默认值
-- 支持命令行覆盖
+`run.py`
+-> `Exp_Fit_Num`
+-> `Dataset_DualSG_Fit_Num_Meta`
+-> `Model_Fit_Num`
 
-### 4. 可视化
-- 可开关控制
-- 生成预测结果图表
-- 保存到model_outputs目录
+特点：
+- 只消费数值序列
+- dataset 仍返回 meta tuple，但模型本身不使用 meta
 
-## 扩展指南
+### 5.2 fit_num_with_meta
 
-### 添加新的数据加载器
-1. 在data_provider/目录下创建新的数据加载器文件
-2. 继承Dataset类
-3. 实现__getitem__和__len__方法
-4. 在data_factory.py中注册
+链路：
 
-### 添加新的模型
-1. 在models/目录下创建新的模型文件
-2. 继承nn.Module类
-3. 实现forward方法
-4. 在exp_basic.py的model_dict中注册
+`run.py`
+-> `Exp_Fit_Num`
+-> `Dataset_DualSG_Fit_Num_Meta`
+-> `Model_Fit_Num_With_Meta`
 
-### 添加新的实验类
-1. 在exp/目录下创建新的实验类
-2. 继承Exp_Basic类
-3. 实现_get_data、train、vali、test等方法
-4. 在run.py中注册
+特点：
+- 使用数值序列 + `city/gender/age/element`
+- 也是 FIT fusion 当前复用的数值 backbone
 
-## 注意事项
+### 5.3 Model_Fit_Num_With_Meta
 
-1. **随机种子**: 全局固定随机种子为2026，确保可复现性
-2. **日志输出**: 所有日志使用统一的日志工具
-3. **目录规范**: 检查点和输出分别保存到model_checkpoints和model_outputs目录
-4. **参数管理**: 新参数应在run.py中添加默认值
-5. **代码风格**: 保持代码风格一致，使用中文注释
+当前保持原有训练语义不变：
+1. Instance Norm
+2. Patch Embedding
+3. 融合 group / element 元数据
+4. AIM
+5. Transformer Encoder
+6. Head 输出未来序列
+7. De-Norm
+
+本轮新增：
+- `extract_features()`
+
+返回：
+- `forecast`
+- `encoded_tokens`
+- `summary_state`
+
+这个接口只给 fusion 调用，不改变数值 baseline 的训练方式。
+
+## 6. FIT fusion
+
+### 6.1 当前定位
+
+当前 FIT fusion 仍然继续使用预处理好的 `caption_emb`，不在训练时接 raw text encoder。
+
+文本侧流程仍然是：
+1. 先生成文本描述
+2. 再离线编码成 `caption_emb`
+3. 训练时直接读取 `caption_emb`
+
+### 6.2 当前数值 backbone 复用方式
+
+FIT fusion 当前复用：
+- `Model_Fit_Num_With_Meta`
+
+复用方式已经不是简单调它的 `forward()`，而是显式调用：
+- `extract_features()`
+
+这样 fusion 能稳定拿到：
+- 数值预测 `y_num`
+- 中间特征 `encoded_tokens`
+- 数值摘要 `summary_state`
+
+### 6.3 当前 fusion 主体结构
+
+当前 fusion 的核心不是“文本单独再预测一下”，而是“文本先调制数值中间特征”。
+
+结构：
+- 文本适配器：`caption_emb -> text_adapter`
+- 文本生成条件参数：
+  - `gamma`
+  - `beta`
+- 数值中间特征：
+  - `encoded_tokens`
+- 条件调制：
+  - `encoded_tokens * (1 + gamma) + beta`
+
+之后再从下列信息构造融合上下文：
+- 文本上下文
+- 调制后的数值摘要
+- 原始数值预测摘要 `y_num`
+- 历史统计特征
+
+### 6.4 历史统计特征
+
+当前用到：
+- `last`
+- `mean`
+- `std`
+- `slope`
+- `range`
+
+这些特征直接从原始 `x_enc` 提取。
+
+### 6.5 direct 模式
+
+参数：
+- `text_mode=direct`
+
+当前语义：
+- 文本先调制数值 latent
+- 再从融合后的上下文直接输出最终未来序列
+
+当前已经不再使用旧版的：
+- `(1 - w) * y_num + w * y_text`
+
+也就是说，direct 不再是浅层加权融合，而是直接的条件化预测。
+
+### 6.6 residual 模式
+
+参数：
+- `text_mode=residual`
+
+当前语义：
+- 先得到数值 backbone 的主预测 `y_num`
+- 文本分支只负责生成一个“有边界的纠偏量”
+
+当前 residual 的约束方式：
+- 不再使用 `beta_delta`
+- 不再使用 `force_gain`
+- 直接用历史 `std + range` 来限制纠偏幅度
+
+形式上可以理解为：
+- 先预测 `raw_delta`
+- 再通过 `tanh(raw_delta)` 限制方向和幅度
+- 再乘以由历史波动决定的半径
+
+最终：
+- `y_final = y_num + delta`
+
+### 6.7 freeze / joint
+
+当前 FIT fusion 支持：
+- 从头 joint 训练
+- 从数值 ckpt 启动
+- 冻结数值流
+- 不冻结数值流联合更新
+
+关键参数：
+- `num_model_path`
+- `freeze_numerical`
+- `text_mode`
+- `fusion_optimizer_mode`
+
+## 7. FIT fusion 优化器
+
+### 7.1 unified
+
+参数：
+- `fusion_optimizer_mode=unified`
+
+语义：
+- 所有可训练参数共用一个 `learning_rate`
+
+### 7.2 split
+
+参数：
+- `fusion_optimizer_mode=split`
+
+语义：
+- 数值 backbone 参数使用 `lr_num`
+- 文本 / 融合头参数使用 `lr_text`
+- 文本分支可单独设 `weight_decay_text`
+
+## 8. 当前官方脚本语义
+
+### 8.1 数值流
+
+- `fit_halfyear_num.sh`
+- `fit_halfyear_num_with_meta.sh`
+- `fit_oneyear_num.sh`
+- `fit_oneyear_num_with_meta.sh`
+
+这些脚本都已经显式带上：
+- `fit_scaler_mode=train_only`
+
+### 8.2 joint_direct
+
+脚本：
+- `fit_fusion_halfyear_direct.sh`
+- `fit_fusion_oneyear_direct.sh`
+
+语义：
+- 从头 joint 训练
+- `text_mode=direct`
+- 默认不加载数值 ckpt
+- 默认不冻结数值流
+
+### 8.3 residual_correction
+
+脚本：
+- `fit_fusion_halfyear_residual.sh`
+- `fit_fusion_oneyear_residual.sh`
+
+语义：
+- 从数值 ckpt 启动
+- `text_mode=residual`
+- 默认冻结数值流
+
+说明：
+- 通过 shell 变量 `NUM_CKPT` 显式指定数值 checkpoint
+
+## 9. 当前 FIT 已经不再使用的旧 fusion 项
+
+FIT 当前实现已经不再依赖：
+- `beta_delta`
+- `force_gain`
+- 文本侧写死输入维度 `llm_dim`
+
+注意：
+- `run.py` 中仍保留 `llm_dim / delta_scale / use_vol_prior / force_gain`
+- 这是为了 Geo 兼容
+- 它们当前不再参与 FIT fusion
+
+## 10. 本地验证状态
+
+### 10.1 已装依赖
+
+当前 base 环境已装：
+- `torch` CPU
+- `numpy`
+- `scipy`
+- `scikit-learn`
+- `pandas`
+- `matplotlib`
+- `tqdm`
+- `einops`
+- `reformer_pytorch`
+
+### 10.2 已通过真实 smoke
+
+已真实跑通：
+- `fit_num`
+- `fit_num_with_meta`
+- `fit_num_with_meta` 重跑验证
+- 新版 `fit_fusion direct + split`
+- 新版 `fit_fusion residual + split`
+- 新版 `fit_fusion direct + unified`
+
+说明：
+- 正式 `fit_caption_emb_all.pt` 当前不在本地
+- 为了验证新版 fusion 代码路径，本轮用过临时小子集和临时 `caption_emb`
+- 临时资产只用于 smoke，后面已删除
+
+## 11. 当前已知限制
+
+### 11.1 正式提升还要靠服务器实验验证
+
+当前已经确认：
+- 代码路径通
+- 新 direct / residual 通
+- split / unified 通
+
+但仍未确认：
+- 新结构在正式 `caption_emb` 和全量训练上是否一定优于旧结构
+
+### 11.2 文本上限仍由描述质量决定
+
+即使融合结构更合理，文本分支上限仍然受以下因素影响：
+- 文本描述是否真的捕捉了趋势模式
+- 文本描述是否和数值走势强相关
+- 预处理 embedding 是否足够表达这些描述

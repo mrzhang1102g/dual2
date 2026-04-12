@@ -1,16 +1,8 @@
 #!/bin/bash
 
-# FIT纯数值流半年预测（不带元数据）
-
-# 激活dualsg2环境
+# FIT 纯数值流：半年预测
 source /data1/miniconda3/bin/activate dualsg2
 
-# 运行训练
-# 任务基本参数
-# 数据参数
-# 时间序列参数
-# 训练参数
-# 其他参数
 python run.py \
   --task_name fit_num \
   --is_training 1 \
@@ -21,6 +13,7 @@ python run.py \
   --data_path FIT_DualSG/fit_dualsg_all.json \
   --inverse \
   --scale True \
+  --fit_scaler_mode train_only \
   --seq_len 48 \
   --label_len 0 \
   --pred_len 12 \
