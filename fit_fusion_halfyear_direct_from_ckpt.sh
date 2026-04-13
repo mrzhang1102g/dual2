@@ -3,8 +3,6 @@
 # FIT fusion 推荐对照：direct + load num ckpt + unfreeze（半年）
 source /data1/miniconda3/bin/activate dualsg2
 
-NUM_CKPT=./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth
-
 python run.py \
   --task_name fit_fusion \
   --is_training 1 \
@@ -19,11 +17,11 @@ python run.py \
   --seq_len 48 \
   --label_len 0 \
   --pred_len 12 \
-  --train_epochs 100 \
+  --train_epochs 20 \
   --batch_size 200 \
   --patience 100 \
-  --num_model_path "$NUM_CKPT" \
-  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt \
+  --num_model_path ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth \
+  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_structured.pt \
   --text_mode direct \
   --fusion_optimizer_mode split \
   --adjust 0 \

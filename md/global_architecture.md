@@ -78,7 +78,7 @@
 
 当前 FIT fusion 默认读取的文本 embedding 是：
 
-- `dataset/FIT_DualSG/pt/fit_dualsg_all.pt`
+- `dataset/FIT_DualSG/pt/fit_dualsg_structured.pt`
 
 `fit_dataset_utils.py` 统一负责：
 
@@ -232,7 +232,7 @@ FIT 当前实现已经不再依赖：
 
 当前 FIT fusion 默认：
 
-- `train_epochs=100`
+- `train_epochs=20`
 - `batch_size=200`
 - `patience=100`
 - `fusion_optimizer_mode=split`

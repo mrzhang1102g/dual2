@@ -1,167 +1,127 @@
-# FIT 服务器执行顺序与结果记录模板
+# FIT 服务器执行手册
 
 最后更新：2026-04-13
 
-## 1. 当前判断
+## 当前重点
 
-当前不建议继续改 FIT fusion 结构。
+当前先只看 FIT half-year。
 
-原因：
+你更关注：
 
-- 数值主干 `fit_num_with_meta` 已经稳定且强。
-- FIT fusion 刚刚完成两项关键修正：
-  - `split lr` 不再被 scheduler 覆盖
-  - 官方脚本默认关闭了当前无效的 `20 epoch + type3` 调度干扰
-- 在这些修正真正跑完之前，继续改模型容易把“结构问题”和“训练 recipe 问题”混在一起。
+- `MAE`
+- `MAPE`
 
-当前更合理的策略是：
+当前已经知道的结论：
 
-1. 先跑一轮新的正式对照实验。
-2. 先看 recipe 修正后，文本流是否仍然整体无效。
-3. 只有在这轮仍然明显不如 baseline 时，再继续改 fusion 结构。
+- `residual + num_ckpt + unfreeze` 是目前最强候选
+- `direct + num_ckpt + unfreeze` 是第二候选
+- `residual + freeze` 更像纯纠偏对照组
+- `direct + scratch` 不是主路线
 
-## 1.1 当前 20 epoch 半年结果
+## 已有正式结果
 
-你已经跑完的半年结果说明当前方向是有信号的：
+### 数值 baseline
 
 - `fit_num_with_meta`
+  - `MAE = 0.085858`
   - `MSE = 0.013315`
+  - `RMSE = 0.115391`
+  - `MAPE = 30.23%`
+  - `WAPE = 18.52%`
+
+### half-year 20 epoch，完整长文本 pt
+
 - `direct + scratch`
+  - `MAE = 0.105100`
   - `MSE = 0.018546`
+  - `RMSE = 0.136183`
+  - `MAPE = 40.06%`
+  - `WAPE = 22.67%`
 - `direct + num_ckpt + unfreeze`
+  - `MAE = 0.081830`
   - `MSE = 0.011850`
+  - `RMSE = 0.108857`
+  - `MAPE = 31.00%`
+  - `WAPE = 17.65%`
 - `residual + num_ckpt + freeze`
+  - `MAE = 0.085395`
   - `MSE = 0.013151`
+  - `RMSE = 0.114679`
+  - `MAPE = 30.38%`
+  - `WAPE = 18.42%`
 - `residual + num_ckpt + unfreeze`
+  - `MAE = 0.079863`
   - `MSE = 0.011620`
+  - `RMSE = 0.107797`
+  - `MAPE = 28.83%`
+  - `WAPE = 17.23%`
 
-当前判断：
+### half-year 100 epoch，完整长文本 pt
 
-- `direct + scratch` 明显不优，100 epoch 仍然更像对照组。
-- 最值得继续追的是：
-  - `direct + num_ckpt + unfreeze`
-  - `residual + num_ckpt + unfreeze`
-- `residual + freeze` 也值得保留，因为它代表“纯纠偏”思路。
+- `direct + scratch`
+  - `MAE = 0.088332`
+  - `MSE = 0.013615`
+  - `RMSE = 0.116683`
+  - `MAPE = 33.22%`
+  - `WAPE = 19.06%`
+- `direct + num_ckpt + unfreeze`
+  - `MAE = 0.077575`
+  - `MSE = 0.010672`
+  - `RMSE = 0.103305`
+  - `MAPE = 29.91%`
+  - `WAPE = 16.74%`
+- `residual + num_ckpt + freeze`
+  - `MAE = 0.085395`
+  - `MSE = 0.013151`
+  - `RMSE = 0.114679`
+  - `MAPE = 30.38%`
+  - `WAPE = 18.42%`
+- `residual + num_ckpt + unfreeze`
+  - `MAE = 0.075699`
+  - `MSE = 0.010511`
+  - `RMSE = 0.102523`
+  - `MAPE = 27.30%`
+  - `WAPE = 16.33%`
 
-## 2. 运行前准备
+## 当前下一轮实验
 
-默认在项目根目录执行：
+下一轮要跑的是：
 
-```bash
-cd /path/to/Dualsg_refined
-```
-
-如果服务器 conda 环境激活路径和脚本里的不一致，先改这些脚本首行：
-
-- `fit_halfyear_num_with_meta.sh`
-- `fit_oneyear_num_with_meta.sh`
-- 所有 `fit_fusion*.sh`
-
-## 3. 推荐执行顺序
-
-建议分两阶段：
-
-- 第一阶段先跑半年任务，确认趋势
-- 第二阶段只有在半年任务里看到价值时，再复制到一年任务
-
-### 3.1 第一阶段：半年任务
-
-#### Step 1. 跑数值 baseline
-
-```bash
-bash ./fit_halfyear_num_with_meta.sh
-```
-
-#### Step 2. 记录 baseline 对应 checkpoint
-
-```bash
-export NUM_CKPT="$(ls -td ./model_checkpoints/fit_halfyear_num_with_meta_* | head -1)/checkpoint.pth"
-echo "$NUM_CKPT"
-```
-
-#### Step 3. 跑 direct from scratch
-
-```bash
-bash ./fit_fusion_halfyear_direct.sh
-```
-
-#### Step 4. 跑 direct from ckpt + unfreeze
-
-```bash
-bash ./fit_fusion_halfyear_direct_from_ckpt.sh
-```
-
-#### Step 5. 跑 residual + freeze
-
-```bash
-bash ./fit_fusion_halfyear_residual.sh
-```
-
-#### Step 6. 跑 residual + unfreeze
-
-```bash
-bash ./fit_fusion_halfyear_residual_unfreeze.sh
-```
-
-### 3.2 第二阶段：一年任务
-
-只有在半年任务里至少有 1 组接近或超过 baseline，再继续一年任务。
-
-#### Step 1. 跑一年 baseline
-
-```bash
-bash ./fit_oneyear_num_with_meta.sh
-```
-
-#### Step 2. 记录一年 checkpoint
-
-```bash
-export NUM_CKPT="$(ls -td ./model_checkpoints/fit_oneyear_num_with_meta_* | head -1)/checkpoint.pth"
-echo "$NUM_CKPT"
-```
-
-#### Step 3. 跑一年 direct from scratch
-
-```bash
-bash ./fit_fusion_oneyear_direct.sh
-```
-
-#### Step 4. 跑一年 direct from ckpt + unfreeze
-
-```bash
-bash ./fit_fusion_oneyear_direct_from_ckpt.sh
-```
-
-#### Step 5. 跑一年 residual + freeze
-
-```bash
-bash ./fit_fusion_oneyear_residual.sh
-```
-
-#### Step 6. 跑一年 residual + unfreeze
-
-```bash
-bash ./fit_fusion_oneyear_residual_unfreeze.sh
-```
-
-## 4. 当前 4 个关键 fusion 组合
-
-半年任务优先关注这 4 组：
-
-| 组别 | 脚本 | 初始化 | 数值流是否冻结 | 说明 |
-|---|---|---|---|---|
-| A | `fit_fusion_halfyear_direct.sh` | 从头训练 | 否 | 当前 direct 基线 |
-| B | `fit_fusion_halfyear_direct_from_ckpt.sh` | 加载数值 ckpt | 否 | 更公平的 direct 对照 |
-| C | `fit_fusion_halfyear_residual.sh` | 加载数值 ckpt | 是 | 纯纠偏思路 |
-| D | `fit_fusion_halfyear_residual_unfreeze.sh` | 加载数值 ckpt | 否 | 纠偏 + 联合微调 |
-
-## 5. 当前脚本的默认超参
-
-当前 FIT fusion 脚本默认：
-
-- `train_epochs = 100`
-- `batch_size = 200`
+- half-year 的 4 个 fusion 脚本
+- `train_epochs = 20`
 - `patience = 100`
+- `caption_emb_path = ./dataset/FIT_DualSG/pt/fit_dualsg_structured.pt`
+
+这 4 个脚本已经改好：
+
+1. `fit_fusion_halfyear_direct.sh`
+2. `fit_fusion_halfyear_direct_from_ckpt.sh`
+3. `fit_fusion_halfyear_residual.sh`
+4. `fit_fusion_halfyear_residual_unfreeze.sh`
+
+## 当前脚本约定
+
+### 训练数据
+
+当前仍然读：
+
+- `./dataset/FIT_DualSG/fit_dualsg_all.json`
+
+### 文本 embedding
+
+当前这轮 half-year 脚本读：
+
+- `./dataset/FIT_DualSG/pt/fit_dualsg_structured.pt`
+
+### 数值 checkpoint
+
+当前这轮 3 个 from-ckpt 脚本直接写死为：
+
+- `./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth`
+
+### 其它默认值
+
+- `batch_size = 200`
 - `fusion_optimizer_mode = split`
 - `learning_rate = 0.001`
 - `lr_num = 0.0001`
@@ -169,107 +129,41 @@ bash ./fit_fusion_oneyear_residual_unfreeze.sh
 - `adjust = 0`
 - `fit_scaler_mode = train_only`
 
-这意味着当前正式推荐设置是：
+## 运行顺序
 
-- 不启用 scheduler
-- 全程使用 split 学习率
+建议顺序：
 
-现在脚本恢复成显式常量写法。
+1. `fit_fusion_halfyear_residual_unfreeze.sh`
+2. `fit_fusion_halfyear_direct_from_ckpt.sh`
+3. `fit_fusion_halfyear_residual.sh`
+4. `fit_fusion_halfyear_direct.sh`
 
-如果要改参数，直接打开对应 `.sh` 修改即可，然后执行：
-
-```bash
-bash ./你的脚本.sh
-```
-
-## 6. 每次实验后看哪里
-
-checkpoint：
-
-```bash
-./model_checkpoints/<setting>/checkpoint.pth
-```
-
-结果文件：
-
-```bash
-./model_outputs/<setting>/results/result.txt
-```
-
-如果想快速查看最近一次结果目录：
-
-```bash
-ls -td ./model_outputs/* | head -1
-```
-
-如果想快速查看最近一次结果：
-
-```bash
-cat "$(ls -td ./model_outputs/*/results | head -1)/result.txt"
-```
-
-## 7. 结果记录模板
-
-建议每轮直接把结果补进下面这张表。
-
-### 7.1 半年任务记录表
-
-| setting | script | init | freeze_num | opt_mode | adjust | epochs | batch | MAE | MSE | RMSE | MAPE | WAPE | 备注 |
-|---|---|---|---|---|---|---|---|---:|---:|---:|---:|---:|---|
-| fit_halfyear_num_with_meta | `fit_halfyear_num_with_meta.sh` | baseline | - | unified | 默认 | 20 | 按脚本 |  |  |  |  |  |  |
-| fit_fusion_halfyear_joint_direct | `fit_fusion_halfyear_direct.sh` | scratch | no | split | 0 | 20 | 200 |  |  |  |  |  |  |
-| fit_fusion_halfyear_direct_from_ckpt | `fit_fusion_halfyear_direct_from_ckpt.sh` | num_ckpt | no | split | 0 | 20 | 200 |  |  |  |  |  |  |
-| fit_fusion_halfyear_residual_correction | `fit_fusion_halfyear_residual.sh` | num_ckpt | yes | split | 0 | 20 | 200 |  |  |  |  |  |  |
-| fit_fusion_halfyear_residual_unfreeze | `fit_fusion_halfyear_residual_unfreeze.sh` | num_ckpt | no | split | 0 | 20 | 200 |  |  |  |  |  |  |
-
-### 7.2 一年任务记录表
-
-| setting | script | init | freeze_num | opt_mode | adjust | epochs | batch | MAE | MSE | RMSE | MAPE | WAPE | 备注 |
-|---|---|---|---|---|---|---|---|---:|---:|---:|---:|---:|---|
-| fit_oneyear_num_with_meta | `fit_oneyear_num_with_meta.sh` | baseline | - | unified | 默认 | 20 | 按脚本 |  |  |  |  |  |  |
-| fit_fusion_oneyear_joint_direct | `fit_fusion_oneyear_direct.sh` | scratch | no | split | 0 | 20 | 200 |  |  |  |  |  |  |
-| fit_fusion_oneyear_direct_from_ckpt | `fit_fusion_oneyear_direct_from_ckpt.sh` | num_ckpt | no | split | 0 | 20 | 200 |  |  |  |  |  |  |
-| fit_fusion_oneyear_residual_correction | `fit_fusion_oneyear_residual.sh` | num_ckpt | yes | split | 0 | 20 | 200 |  |  |  |  |  |  |
-| fit_fusion_oneyear_residual_unfreeze | `fit_fusion_oneyear_residual_unfreeze.sh` | num_ckpt | no | split | 0 | 20 | 200 |  |  |  |  |  |  |
-
-## 8. 结果判断规则
+## 如何判断结果
 
 优先看：
 
-1. `MSE`
-2. `RMSE`
-3. `MAE`
-4. `WAPE`
+1. `MAE`
+2. `MAPE`
+3. `WAPE`
+4. `MSE`
 
-当前建议的判断方式：
+当前判断规则：
 
-- 如果 4 个 fusion 组合全部明显差于 `fit_num_with_meta`
-  - 暂停继续大规模跑一年任务
-  - 回来继续改 fusion 结构
-- 如果有 1 到 2 组接近 baseline
-  - 先继续跑一年任务验证稳定性
-- 如果有组合稳定优于 baseline
-  - 再考虑做更细的超参搜索
+- 如果 `residual + unfreeze` 仍然最好
+  - 先把这条路线作为主路线
+  - 再考虑复制到 one-year
+- 如果 `direct + from_ckpt + unfreeze` 追平或反超
+  - 保留 direct / residual 两条路线同时汇报
+- 如果 4 组都明显差于 baseline
+  - 暂停继续扩展实验
+  - 回头继续改 fusion 结构
 
-## 9. 额外建议
+## 结果记录模板
 
-这轮先不要同时改太多东西。
-
-建议保持：
-
-- 文本描述生成方式不变
-- `caption_emb` 不重算
-- 不改数值主干
-- 先只比较当前这 4 个融合组合
-
-补充说明：
-
-- 当前训练代码仍然读取 `FIT_DualSG/fit_dualsg_all.json`
-- 当前 FIT fusion 脚本默认会把 `CAPTION_EMB_PATH` 指向 `./dataset/FIT_DualSG/pt/fit_dualsg_all.pt`
-- 如果后面要切到 dataset pt 直接加载，需要先确认 `.pt` 的数据结构与当前 json 契约一致
-
-如果这轮依然全线不提升，再回头考虑：
-
-- 给 direct 加更强的 `y_num` skip
-- 对 `caption_emb` 做归一化或轻量投影约束
-- 回头检查文本描述本身是否有效
+| setting | script | text pt | epochs | MAE | MAPE | WAPE | MSE | 备注 |
+|---|---|---|---:|---:|---:|---:|---:|---|
+| fit_num_with_meta | `fit_halfyear_num_with_meta.sh` | - | 20 |  |  |  |  | baseline |
+| fit_fusion_halfyear_joint_direct | `fit_fusion_halfyear_direct.sh` | structured | 20 |  |  |  |  | scratch |
+| fit_fusion_halfyear_direct_from_ckpt | `fit_fusion_halfyear_direct_from_ckpt.sh` | structured | 20 |  |  |  |  | direct |
+| fit_fusion_halfyear_residual_correction | `fit_fusion_halfyear_residual.sh` | structured | 20 |  |  |  |  | freeze |
+| fit_fusion_halfyear_residual_unfreeze | `fit_fusion_halfyear_residual_unfreeze.sh` | structured | 20 |  |  |  |  | best candidate |

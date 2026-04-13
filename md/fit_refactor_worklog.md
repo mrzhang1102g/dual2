@@ -442,3 +442,50 @@ FIT 褰撳墠宸茬粡涓嶅啀渚濊禆锛?
 褰撳墠寤鸿锛?
 - 鍏堢户缁窇鍗婂勾杩?4 涓?fusion 缁勫悎鐨?100 epoch 鐗堟湰
 - 璺戝畬鍐嶅喅瀹氭槸鍚︾户缁敼缁撴瀯锛岃繕鏄洿鎺ュ鍒跺埌涓€骞翠换鍔?
+
+## 18. 2026-04-13 鍗婂勾 100 epoch 姝ｅ紡缁撴灉锛堝畬鏁撮暱鏂囨湰 pt锛?
+
+- `direct + scratch`
+  - `MAE  = 0.088332`
+  - `MSE  = 0.013615`
+  - `RMSE = 0.116683`
+  - `MAPE = 33.22%`
+  - `WAPE = 19.06%`
+- `direct + num_ckpt + unfreeze`
+  - `MAE  = 0.077575`
+  - `MSE  = 0.010672`
+  - `RMSE = 0.103305`
+  - `MAPE = 29.91%`
+  - `WAPE = 16.74%`
+- `residual + num_ckpt + freeze`
+  - `MAE  = 0.085395`
+  - `MSE  = 0.013151`
+  - `RMSE = 0.114679`
+  - `MAPE = 30.38%`
+  - `WAPE = 18.42%`
+- `residual + num_ckpt + unfreeze`
+  - `MAE  = 0.075699`
+  - `MSE  = 0.010511`
+  - `RMSE = 0.102523`
+  - `MAPE = 27.30%`
+  - `WAPE = 16.33%`
+
+褰撳墠鍦?MAE / MAPE 浼樺厛鐨勫垽鏂笅锛?
+
+- `residual + num_ckpt + unfreeze` 浠嶇劧鏄渶寮虹殑涓€缁?
+- `direct + num_ckpt + unfreeze` 鏄湁绔炰簤鍔涚殑绗簩缁?
+- `residual + freeze` 鏇村儚涓€涓函绾犲亸瀵圭収缁?
+- `direct + scratch` 浠嶇劧涓嶆槸涓昏矾绾?
+
+## 19. 2026-04-13 涓嬩竴杞?halfyear 缁撴瀯鍖栨枃鏈?pt
+
+鐢ㄦ埛涓嬩竴杞璺戠殑鏄細
+
+- 鍗婂勾 4 缁?fusion 鑴氭湰
+- `train_epochs = 20`
+- `caption_emb_path = ./dataset/FIT_DualSG/pt/fit_dualsg_structured.pt`
+
+杩欎竴杞?ckpt 鑴氭湰涔熷凡鏀规垚鏇寸洿鎺ョ殑鍐欐硶锛?
+
+- 鍘绘帀鑴氭湰澶撮儴鐙珛鐨?`NUM_CKPT=...`
+- 鐩存帴鍦?`--num_model_path` 鍚庡啓璺緞
