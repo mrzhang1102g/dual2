@@ -19,6 +19,7 @@ python run.py \
   --pred_len 24 \
   --train_epochs 20 \
   --batch_size 200 \
+  --patience 100 \
   --visualize False \
   --output_dir ./model_outputs/ \
   --checkpoint_dir ./model_checkpoints/

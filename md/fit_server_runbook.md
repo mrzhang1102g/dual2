@@ -161,7 +161,7 @@ bash ./fit_fusion_oneyear_residual_unfreeze.sh
 
 - `train_epochs = 100`
 - `batch_size = 200`
-- `patience = 30`
+- `patience = 100`
 - `fusion_optimizer_mode = split`
 - `learning_rate = 0.001`
 - `lr_num = 0.0001`
@@ -174,23 +174,13 @@ bash ./fit_fusion_oneyear_residual_unfreeze.sh
 - 不启用 scheduler
 - 全程使用 split 学习率
 
-同时，脚本现在支持环境变量覆盖，例如：
+现在脚本恢复成显式常量写法。
+
+如果要改参数，直接打开对应 `.sh` 修改即可，然后执行：
 
 ```bash
-TRAIN_EPOCHS=20 PATIENCE=20 bash ./fit_fusion_halfyear_direct.sh
+bash ./你的脚本.sh
 ```
-
-当前支持覆盖的常用变量：
-
-- `TRAIN_EPOCHS`
-- `BATCH_SIZE`
-- `PATIENCE`
-- `ADJUST`
-- `LEARNING_RATE`
-- `LR_NUM`
-- `LR_TEXT`
-- `CAPTION_EMB_PATH`
-- `DATA_PATH`
 
 ## 6. 每次实验后看哪里
 
@@ -275,7 +265,7 @@ cat "$(ls -td ./model_outputs/*/results | head -1)/result.txt"
 补充说明：
 
 - 当前训练代码仍然读取 `FIT_DualSG/fit_dualsg_all.json`
-- 还没有接你新整理的 `dataset/FIT_DualSG/pt/fit_dualsg_all.pt`
+- 当前 FIT fusion 脚本默认会把 `CAPTION_EMB_PATH` 指向 `./dataset/FIT_DualSG/pt/fit_dualsg_all.pt`
 - 如果后面要切到 dataset pt 直接加载，需要先确认 `.pt` 的数据结构与当前 json 契约一致
 
 如果这轮依然全线不提升，再回头考虑：
