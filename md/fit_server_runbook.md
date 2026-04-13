@@ -164,6 +164,28 @@
 |---|---|---|---:|---:|---:|---:|---:|---|
 | fit_num_with_meta | `fit_halfyear_num_with_meta.sh` | - | 20 |  |  |  |  | baseline |
 | fit_fusion_halfyear_joint_direct | `fit_fusion_halfyear_direct.sh` | structured | 20 |  |  |  |  | scratch |
+| fit_fusion_halfyear_direct_freeze | `fit_fusion_halfyear_direct_freeze.sh` | structured | 20 |  |  |  |  | direct + ckpt + freeze |
 | fit_fusion_halfyear_direct_from_ckpt | `fit_fusion_halfyear_direct_from_ckpt.sh` | structured | 20 |  |  |  |  | direct |
 | fit_fusion_halfyear_residual_correction | `fit_fusion_halfyear_residual.sh` | structured | 20 |  |  |  |  | freeze |
 | fit_fusion_halfyear_residual_unfreeze | `fit_fusion_halfyear_residual_unfreeze.sh` | structured | 20 |  |  |  |  | best candidate |
+
+## 2026-04-13 addendum
+
+Added one more half-year script for a cleaner direct ablation:
+
+- `fit_fusion_halfyear_direct_freeze.sh`
+
+Meaning:
+
+- load numerical checkpoint
+- freeze numerical backbone
+- train only text/fusion-side parameters
+- `text_mode = direct`
+
+Why add it:
+
+- this completes the direct-side comparison:
+  - `direct + scratch`
+  - `direct + ckpt + freeze`
+  - `direct + ckpt + unfreeze`
+- `residual + scratch` is intentionally not added for now because residual is easier to interpret as a correction model when a strong numerical predictor already exists

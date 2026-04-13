@@ -489,3 +489,26 @@ FIT 褰撳墠宸茬粡涓嶅啀渚濊禆锛?
 
 - 鍘绘帀鑴氭湰澶撮儴鐙珛鐨?`NUM_CKPT=...`
 - 鐩存帴鍦?`--num_model_path` 鍚庡啓璺緞
+
+## 20. 2026-04-13 add one more direct ablation
+
+Added:
+
+- `fit_fusion_halfyear_direct_freeze.sh`
+
+This is:
+
+- `direct`
+- load numerical checkpoint
+- freeze numerical backbone
+- train text/fusion-side parameters only
+
+Reason:
+
+- current matrix had:
+  - `direct + scratch`
+  - `direct + ckpt + unfreeze`
+  - `residual + ckpt + freeze`
+  - `residual + ckpt + unfreeze`
+- adding `direct + ckpt + freeze` makes the direct-side comparison more complete
+- `residual + scratch` is still not planned because it is harder to interpret as a correction setup
