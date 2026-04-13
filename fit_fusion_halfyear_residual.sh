@@ -7,7 +7,7 @@
 # - 默认冻结数值流
 source /data1/miniconda3/bin/activate dualsg2
 
-NUM_CKPT=./model_checkpoints/REPLACE_WITH_NUM_CKPT/checkpoint.pth
+NUM_CKPT=./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth
 
 python run.py \
   --task_name fit_fusion \
