@@ -395,3 +395,61 @@ FIT 当前已经不再依赖：
 
 补充：
 - 服务器执行顺序与结果记录模板已单独写入 `fit_server_runbook.md`
+
+## 16. 2026-04-13 半年 20 epoch 正式结果
+
+用户已完成半年任务 5 组结果：
+
+- `fit_num_with_meta`
+  - `MAE  = 0.085858`
+  - `MSE  = 0.013315`
+  - `RMSE = 0.115391`
+  - `MAPE = 30.23%`
+  - `WAPE = 18.52%`
+- `direct + scratch`
+  - `MAE  = 0.105100`
+  - `MSE  = 0.018546`
+  - `RMSE = 0.136183`
+  - `MAPE = 40.06%`
+  - `WAPE = 22.67%`
+- `direct + num_ckpt + unfreeze`
+  - `MAE  = 0.081830`
+  - `MSE  = 0.011850`
+  - `RMSE = 0.108857`
+  - `MAPE = 31.00%`
+  - `WAPE = 17.65%`
+- `residual + num_ckpt + freeze`
+  - `MAE  = 0.085395`
+  - `MSE  = 0.013151`
+  - `RMSE = 0.114679`
+  - `MAPE = 30.38%`
+  - `WAPE = 18.42%`
+- `residual + num_ckpt + unfreeze`
+  - `MAE  = 0.079863`
+  - `MSE  = 0.011620`
+  - `RMSE = 0.107797`
+  - `MAPE = 28.83%`
+  - `WAPE = 17.23%`
+
+当前结论：
+
+- `direct + scratch` 可以视为当前无效对照组。
+- `direct + num_ckpt + unfreeze` 已经明显优于 baseline。
+- `residual + num_ckpt + freeze` 略优于 baseline，但提升有限。
+- `residual + num_ckpt + unfreeze` 当前是半年任务里最强的一组。
+
+## 17. 2026-04-13 下一步：先跑 100 epoch
+
+当前不继续改 fusion 结构，先把训练 recipe 拉长到 100 epoch。
+
+已完成：
+
+- 8 个 FIT fusion 脚本改为默认 `train_epochs=100`
+- 默认 `patience=30`
+- 保留 `adjust=0`
+- 脚本支持环境变量覆盖，不需要以后反复手改
+
+当前建议：
+
+- 先继续跑半年这 4 个 fusion 组合的 100 epoch 版本
+- 跑完再决定是否继续改结构，还是直接复制到一年任务

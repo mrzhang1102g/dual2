@@ -347,8 +347,9 @@ FIT fusion 当前复用：
 
 当前脚本显式设置：
 
-- `train_epochs=20`
+- `train_epochs=100`
 - `batch_size=200`
+- `patience=30`
 - `adjust=0`
 
 ### 8.3 residual_correction
@@ -368,8 +369,9 @@ FIT fusion 当前复用：
 
 - 通过 shell 变量 `NUM_CKPT` 指定数值 checkpoint
 - 当前脚本显式设置：
-  - `train_epochs=20`
+  - `train_epochs=100`
   - `batch_size=200`
+  - `patience=30`
   - `adjust=0`
 
 ### 8.4 推荐补充对照脚本
@@ -385,6 +387,18 @@ FIT fusion 当前复用：
 
 - `direct + load num ckpt + unfreeze`
 - `residual + load num ckpt + unfreeze`
+
+这些脚本当前统一支持环境变量覆盖：
+
+- `TRAIN_EPOCHS`
+- `BATCH_SIZE`
+- `PATIENCE`
+- `ADJUST`
+- `LEARNING_RATE`
+- `LR_NUM`
+- `LR_TEXT`
+- `CAPTION_EMB_PATH`
+- `DATA_PATH`
 
 ## 9. FIT 已经不再使用的旧 fusion 项
 
@@ -467,11 +481,9 @@ FIT 当前实现已经不再依赖：
 
 原因：
 
-- 默认 `train_epochs=20`
-- 默认 `lradj=type3`
-- 当前 `type3` 的衰减边界就在 20 epoch
-
-因此在这套短程训练脚本里，先关闭 scheduler 更干净，更利于判断结构本身有没有帮助。
+- 当前这一轮先不想把 scheduler 重新混进实验判断
+- 默认保持更长训练 + split lr + 无 scheduler
+- 这样更利于判断结构本身和初始化策略本身有没有帮助
 
 如果后续要重新启用 scheduler，需要明确：
 

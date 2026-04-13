@@ -20,6 +20,29 @@
 2. 先看 recipe 修正后，文本流是否仍然整体无效。
 3. 只有在这轮仍然明显不如 baseline 时，再继续改 fusion 结构。
 
+## 1.1 当前 20 epoch 半年结果
+
+你已经跑完的半年结果说明当前方向是有信号的：
+
+- `fit_num_with_meta`
+  - `MSE = 0.013315`
+- `direct + scratch`
+  - `MSE = 0.018546`
+- `direct + num_ckpt + unfreeze`
+  - `MSE = 0.011850`
+- `residual + num_ckpt + freeze`
+  - `MSE = 0.013151`
+- `residual + num_ckpt + unfreeze`
+  - `MSE = 0.011620`
+
+当前判断：
+
+- `direct + scratch` 明显不优，100 epoch 仍然更像对照组。
+- 最值得继续追的是：
+  - `direct + num_ckpt + unfreeze`
+  - `residual + num_ckpt + unfreeze`
+- `residual + freeze` 也值得保留，因为它代表“纯纠偏”思路。
+
 ## 2. 运行前准备
 
 默认在项目根目录执行：
@@ -136,8 +159,9 @@ bash ./fit_fusion_oneyear_residual_unfreeze.sh
 
 当前 FIT fusion 脚本默认：
 
-- `train_epochs = 20`
+- `train_epochs = 100`
 - `batch_size = 200`
+- `patience = 30`
 - `fusion_optimizer_mode = split`
 - `learning_rate = 0.001`
 - `lr_num = 0.0001`
@@ -149,6 +173,24 @@ bash ./fit_fusion_oneyear_residual_unfreeze.sh
 
 - 不启用 scheduler
 - 全程使用 split 学习率
+
+同时，脚本现在支持环境变量覆盖，例如：
+
+```bash
+TRAIN_EPOCHS=20 PATIENCE=20 bash ./fit_fusion_halfyear_direct.sh
+```
+
+当前支持覆盖的常用变量：
+
+- `TRAIN_EPOCHS`
+- `BATCH_SIZE`
+- `PATIENCE`
+- `ADJUST`
+- `LEARNING_RATE`
+- `LR_NUM`
+- `LR_TEXT`
+- `CAPTION_EMB_PATH`
+- `DATA_PATH`
 
 ## 6. 每次实验后看哪里
 
@@ -229,6 +271,12 @@ cat "$(ls -td ./model_outputs/*/results | head -1)/result.txt"
 - `caption_emb` 不重算
 - 不改数值主干
 - 先只比较当前这 4 个融合组合
+
+补充说明：
+
+- 当前训练代码仍然读取 `FIT_DualSG/fit_dualsg_all.json`
+- 还没有接你新整理的 `dataset/FIT_DualSG/pt/fit_dualsg_all.pt`
+- 如果后面要切到 dataset pt 直接加载，需要先确认 `.pt` 的数据结构与当前 json 契约一致
 
 如果这轮依然全线不提升，再回头考虑：
 
