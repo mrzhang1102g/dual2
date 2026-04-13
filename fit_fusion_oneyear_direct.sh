@@ -17,10 +17,13 @@ python run.py \
   --seq_len 48 \
   --label_len 0 \
   --pred_len 24 \
+  --train_epochs 20 \
+  --batch_size 200 \
   --num_model_path "" \
   --caption_emb_path ./dataset/FIT_DualSG/fit_caption_emb_all.pt \
   --text_mode direct \
   --fusion_optimizer_mode split \
+  --adjust 0 \
   --learning_rate 0.001 \
   --lr_num 0.0001 \
   --lr_text 0.0005 \

@@ -50,10 +50,21 @@ class Exp_Fit_Fusion(Exp_Basic):
     def _select_optimizer(self):
         optimizer_mode = getattr(self.args, "fusion_optimizer_mode", "unified")
         if optimizer_mode == "unified":
+            trainable_params = [
+                param for param in self.model.parameters() if param.requires_grad
+            ]
+            if not trainable_params:
+                raise ValueError("No trainable parameters found for FIT fusion optimizer.")
             return optim.Adam(
-                filter(lambda param: param.requires_grad, self.model.parameters()),
-                lr=self.args.learning_rate,
-                weight_decay=self.args.weight_decay,
+                [
+                    {
+                        "params": trainable_params,
+                        "lr": self.args.learning_rate,
+                        "base_lr": self.args.learning_rate,
+                        "weight_decay": self.args.weight_decay,
+                        "group_name": "all",
+                    }
+                ]
             )
 
         if optimizer_mode != "split":
@@ -82,7 +93,9 @@ class Exp_Fit_Fusion(Exp_Basic):
                 {
                     "params": numerical_params,
                     "lr": self.args.lr_num,
+                    "base_lr": self.args.lr_num,
                     "weight_decay": self.args.weight_decay,
+                    "group_name": "numerical",
                 }
             )
         if text_fusion_params:
@@ -90,7 +103,9 @@ class Exp_Fit_Fusion(Exp_Basic):
                 {
                     "params": text_fusion_params,
                     "lr": self.args.lr_text,
+                    "base_lr": self.args.lr_text,
                     "weight_decay": self.args.weight_decay_text,
+                    "group_name": "text_fusion",
                 }
             )
 

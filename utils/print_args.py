@@ -42,8 +42,9 @@ def print_args(args):
     print(f'  {"Train Epochs:":<22}{args.train_epochs:<24}{"Batch Size:":<22}{args.batch_size:<24}')
     print(f'  {"Patience:":<22}{args.patience:<24}{"Learning Rate:":<22}{args.learning_rate:<24}')
     print(f'  {"Weight Decay:":<22}{args.weight_decay:<24}{"Loss:":<22}{args.loss:<24}')
-    print(f'  {"Lradj:":<22}{args.lradj:<24}{"Use Amp:":<22}{args.use_amp:<24}')
-    print(f'  {"Num Workers:":<22}{args.num_workers:<24}{"Use DTW:":<22}{args.use_dtw:<24}')
+    print(f'  {"Lradj:":<22}{args.lradj:<24}{"Adjust LR:":<22}{args.adjust:<24}')
+    print(f'  {"Use Amp:":<22}{args.use_amp:<24}{"Num Workers:":<22}{args.num_workers:<24}')
+    print(f'  {"Use DTW:":<22}{args.use_dtw:<24}')
     print()
 
     print("\033[1m" + "设备参数" + "\033[0m")

@@ -54,9 +54,23 @@ def adjust_learning_rate(optimizer, epoch, args):
         return  # 不调整学习率
     if epoch in lr_adjust.keys():
         lr = lr_adjust[epoch]
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
-        print('Updating learning rate to {}'.format(lr))
+        if args.learning_rate != 0:
+            scale = lr / args.learning_rate
+        else:
+            scale = 1.0
+
+        updated_lrs = []
+        for index, param_group in enumerate(optimizer.param_groups):
+            base_lr = param_group.setdefault('base_lr', param_group['lr'])
+            new_lr = base_lr * scale
+            param_group['lr'] = new_lr
+            group_name = param_group.get('group_name', f'group{index}')
+            updated_lrs.append(f'{group_name}={new_lr}')
+
+        if len(updated_lrs) == 1:
+            print('Updating learning rate to {}'.format(lr))
+        else:
+            print('Updating learning rates: {}'.format(', '.join(updated_lrs)))
 
 
 class EarlyStopping:

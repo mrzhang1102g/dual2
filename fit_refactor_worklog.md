@@ -1,6 +1,6 @@
 # FIT Refactor Worklog
 
-最后更新：2026-04-12
+最后更新：2026-04-13
 
 ## 1. 文档用途
 
@@ -80,6 +80,9 @@ FIT 侧已经完成两轮整理：
 - FIT fusion 脚本已清掉：
   - `--beta_delta`
   - `--llm_dim`
+- FIT fusion 官方脚本已显式补上：
+  - `--train_epochs 20`
+  - `--batch_size 200`
 
 注意：
 - `run.py` 中 `llm_dim / delta_scale / use_vol_prior / force_gain` 仍保留在 parser 里
@@ -221,3 +224,174 @@ FIT 当前已经不再依赖：
 - 这次重写采用的设计原则
 - 为什么删掉 `beta_delta / force_gain / llm_dim`
 - direct / residual 的新语义
+
+## 10. 2026-04-13 服务器首轮结果
+
+### 10.1 半年 `fit_num_with_meta` baseline
+
+当前用户反馈的正式结果：
+- `MAE  = 0.085858`
+- `MSE  = 0.013315`
+- `RMSE = 0.115391`
+- `MAPE = 30.23%`
+- `WAPE = 18.52%`
+
+### 10.2 半年新版 `fit_fusion_halfyear_joint_direct`
+
+当前用户反馈的正式结果：
+- `MAE  = 0.091474`
+- `MSE  = 0.014394`
+- `RMSE = 0.119975`
+- `MAPE = 35.42%`
+- `WAPE = 19.73%`
+
+结论：
+- 当前新版 `direct` 首轮正式实验弱于数值主干 baseline
+- 因此现阶段不能判断“文本流设计已经有效”
+
+## 11. 当前已确认问题
+
+### 11.1 学习率分组被 scheduler 覆盖
+
+当前 `fusion_optimizer_mode=split` 虽然初始化时会分成：
+- num group = `lr_num`
+- text group = `lr_text`
+
+但 `adjust_learning_rate()` 会在每个 epoch 结束后把所有 param group 统一覆盖成 `args.learning_rate`。
+
+这意味着：
+- `split` 现在不是全程分组学习率
+- 只是初始化时短暂分组，后面就被抹平
+
+### 11.2 `type3` 在 20 epoch 训练里几乎不起作用
+
+当前 `type3` 的写法是：
+- `lr = learning_rate * (0.1 ** (epoch // 20))`
+
+而脚本默认：
+- `train_epochs = 20`
+
+再加上 lr 调整发生在 epoch 结束后，所以：
+- 前 19 个 epoch 都是 `0.001`
+- 到第 20 个 epoch 结束才会准备降 lr
+- 但训练其实已经结束
+
+也就是说：
+- 当前 20 epoch 配置下，`type3` 基本没有实际调度效果
+
+### 11.3 当前 `joint_direct` 不是公平的“文本增强 baseline”
+
+现在官方 `direct` 脚本语义是：
+- 从头 joint 训练
+- 不加载数值 ckpt
+- 不冻结数值流
+
+这意味着它不是“在强数值主干基础上加文本”，而是：
+- 一个带文本条件化的新模型，从头重训
+
+所以它首轮弱于已有强 baseline，并不意外。
+
+## 12. 当前判断
+
+现阶段更像是：
+- 数值主干本身是稳定且强的
+- 文本实验的首要问题，未必是文本信息本身无用
+- 更可能是训练 recipe 和实验设计还没有站在一个公平起点上
+
+优先级判断：
+1. 先修学习率与调度问题
+2. 再重新跑 direct / residual
+3. 再判断文本设计本身是否有效
+
+## 13. 下一轮实验建议
+
+建议按下面顺序做，而不是继续直接堆新结构：
+
+1. 先修 `split lr` 被覆盖的问题
+- 至少保证 `lr_num` 和 `lr_text` 能全程独立
+
+2. 先把 fusion 脚本改成不使用当前无效的 `type3`
+- 一个简单可行方案是 `--adjust 0`
+
+3. 半年任务优先重跑下面 4 组
+- `direct + from scratch + split + adjust=0`
+- `direct + load num ckpt + unfreeze + split + adjust=0`
+- `residual + load num ckpt + freeze + split + adjust=0`
+- `residual + load num ckpt + unfreeze + split + adjust=0`
+
+4. 如果上述仍无提升，再看结构层
+- 是否给 direct 保留更强的 `y_num` skip
+- 是否先对 `caption_emb` 做更稳的归一化
+- 是否需要重新检查文本描述本身的质量
+
+## 14. 2026-04-13 下一轮修改计划
+
+当前判断已经比较明确：
+- 数值主干 `fit_num_with_meta` 仍然稳定且强
+- 新版文本流首轮正式结果弱于 baseline
+- 现在优先要排查训练 recipe 与实现细节，而不是继续盲目改更复杂的文本结构
+
+下一轮修改按这个顺序执行：
+
+1. 先修 `split lr` 被 scheduler 覆盖的问题
+- 目标：让 `lr_num` 和 `lr_text` 在整个训练过程中都能保持分组语义
+- 做法：修改学习率调度逻辑，让每个 param group 基于自己的 `base_lr` 衰减，而不是统一覆盖成 `args.learning_rate`
+
+2. 同时修正 FIT fusion 官方脚本的默认训练策略
+- 当前 20 epoch + `type3` 几乎没有有效调度
+- 下一轮默认先改成：
+  - `--adjust 0`
+- 这样先把 scheduler 干扰拿掉，保证实验结论更干净
+
+3. 补一组更公平的官方实验入口
+- 不是只保留：
+  - `joint_direct`
+  - `residual_correction`
+- 还要补上更关键的组合：
+  - `direct + load num ckpt + unfreeze`
+  - `residual + load num ckpt + unfreeze`
+
+4. 完成后做本地静态检查
+- `compileall`
+- `run.py --help`
+- 核对脚本参数与文档一致
+
+5. 文档持续同步
+- `fit_refactor_worklog.md`
+- `global_architecture.md`
+- 如有需要，补充 `fit_fusion_redesign.md`
+
+## 15. 2026-04-13 学习率与脚本修正
+
+本轮已完成：
+
+1. 修复 `split lr` 被 scheduler 覆盖的问题
+- `exp/exp_fit_fusion.py` 里的 optimizer param group 现在会显式保存自己的 `base_lr`
+- `utils/tools.py` 里的 `adjust_learning_rate()` 不再把所有 group 一起覆盖成 `args.learning_rate`
+- 现在 scheduler 会按每个 group 自己的 `base_lr` 做相对缩放
+
+2. 修正 FIT fusion 官方脚本默认 recipe
+- 4 个原有 FIT fusion 脚本现在都显式加上了 `--adjust 0`
+- 这样可以先去掉当前 `20 epoch + type3` 的无效调度干扰
+
+3. 补充更公平的推荐实验脚本
+- `fit_fusion_halfyear_direct_from_ckpt.sh`
+- `fit_fusion_halfyear_residual_unfreeze.sh`
+- `fit_fusion_oneyear_direct_from_ckpt.sh`
+- `fit_fusion_oneyear_residual_unfreeze.sh`
+
+4. 本轮静态验证
+- `python -m compileall -q run.py exp models data_provider utils layers` 已通过
+- 单独做了一个 scheduler 小测试，确认 `type3` 在 split 模式下会把：
+  - numerical group: `1e-4 -> 1e-5`
+  - text_fusion group: `5e-4 -> 5e-5`
+
+当前判断：
+- 当前最值得重新跑的还是 4 组半年实验：
+  - `direct + from scratch + split + adjust=0`
+  - `direct + load num ckpt + unfreeze + split + adjust=0`
+  - `residual + load num ckpt + freeze + split + adjust=0`
+  - `residual + load num ckpt + unfreeze + split + adjust=0`
+
+补充：
+- 服务器执行顺序与结果记录模板已单独写入 `fit_server_runbook.md`
