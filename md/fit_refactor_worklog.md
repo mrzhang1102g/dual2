@@ -154,3 +154,147 @@
 - `disable_text`
 - `random`
 - `filler`
+
+## 0414 v2 首轮结果
+
+用户已经完成：
+
+- `fit_fusion_halfyear_direct_v2.sh`
+- `fit_fusion_halfyear_residual_v2.sh`
+
+结果：
+
+- `direct_v2 + ckpt + unfreeze`
+  - `MAE = 0.079404`
+  - `MSE = 0.011418`
+  - `RMSE = 0.106854`
+  - `MAPE = 29.18%`
+  - `WAPE = 17.13%`
+- `residual_v2 + ckpt + unfreeze`
+  - `MAE = 0.079863`
+  - `MSE = 0.011669`
+  - `RMSE = 0.108021`
+  - `MAPE = 28.60%`
+  - `WAPE = 17.23%`
+
+当前解读：
+
+- `direct_v2` 已经是目前最强的 direct 版本
+- 说明把显式数值 skip 加回来是有效的
+- `residual_v2` 在 `MAPE` 上更好，说明它在比例误差层面更有潜力
+- 但 `residual_v2` 目前还没有在 `MAE / WAPE` 上压过 `direct_v2`
+
+因此当前最合理的下一步不是立刻拉 `100 epoch`，而是先补文本控制实验。
+
+## 0414 v2 控制实验结果
+
+用户随后补完了三类控制：
+
+- `disable_text`
+- `random text`
+- `filler text`
+
+结果如下。
+
+### `disable_text`
+
+- `direct_v2 + ckpt + unfreeze + disable_text`
+  - `MAE = 0.080189`
+  - `MSE = 0.011770`
+  - `RMSE = 0.108491`
+  - `MAPE = 28.75%`
+  - `WAPE = 17.30%`
+- `residual_v2 + ckpt + unfreeze + disable_text`
+  - `MAE = 0.080189`
+  - `MSE = 0.011770`
+  - `RMSE = 0.108491`
+  - `MAPE = 28.75%`
+  - `WAPE = 17.30%`
+
+这两组完全一致，符合当前实现语义：
+
+- 关闭文本后，两种模式都严格退化成纯数值预测
+
+### `filler text`
+
+- `direct_v2 + ckpt + unfreeze + filler`
+  - `MAE = 0.079494`
+  - `MSE = 0.011439`
+  - `RMSE = 0.106952`
+  - `MAPE = 29.26%`
+  - `WAPE = 17.15%`
+- `residual_v2 + ckpt + unfreeze + filler`
+  - `MAE = 0.079827`
+  - `MSE = 0.011651`
+  - `RMSE = 0.107941`
+  - `MAPE = 28.72%`
+  - `WAPE = 17.22%`
+
+### `random text`
+
+- `direct_v2 + ckpt + unfreeze + random`
+  - `MAE = 0.079525`
+  - `MSE = 0.011442`
+  - `RMSE = 0.106967`
+  - `MAPE = 29.33%`
+  - `WAPE = 17.16%`
+- `residual_v2 + ckpt + unfreeze + random`
+  - `MAE = 0.079860`
+  - `MSE = 0.011664`
+  - `RMSE = 0.108002`
+  - `MAPE = 28.65%`
+  - `WAPE = 17.23%`
+
+## 当前阶段结论
+
+0414 v2 到这里已经可以得出比较明确的判断。
+
+### 结构层面
+
+- 第三代结构比第二代更稳
+- 尤其是 `direct_v2`，已经明显强于 0411 的 direct 系列
+- 这说明“保留显式数值 skip，再做动态融合”是正确方向
+
+### 语义层面
+
+- `direct_v2` 的真实文本、filler、random 都非常接近，而且都只比 `disable_text` 略好一点
+- `residual_v2` 的真实文本、filler、random、disable_text 几乎完全重合
+
+这意味着：
+
+- 第三代结构虽然比第二代干净、稳定
+- 但文本语义贡献仍然没有被坐实
+
+也就是说，当前还不能支持这样的叙事：
+
+- `real text > filler text > random text > disable_text`
+
+### 对两条主线的判断
+
+- `direct_v2`
+  - 当前最强的 direct 版本
+  - 可能已经从“有文本分支”这件事本身获得了轻微辅助增益
+  - 但还没有形成清晰的语义排序
+- `residual_v2`
+  - 结构上更接近我们真正想要的“文本纠偏器”
+  - 但文本系数对 real / filler / random 的区分仍然太弱
+  - 因而还没有把结构约束兑现成语义增益
+
+## 当前下一步
+
+当前最合理的方向不再是：
+
+- 立刻把 v2 拉到更长训练轮数
+- 继续堆更多 prompt / 更多文本版本
+
+而是：
+
+- 进入下一轮结构重写
+- 重点继续改 `residual`
+- 让“文本内容不同”必须导致不同的纠偏策略
+
+更具体地说，下一轮要重点解决：
+
+1. 为什么 `text_coeff` 对 real / filler / random 的区分仍然这么弱
+2. 为什么 `residual_v2` 在结构上要求文本参与，但结果上仍然接近 `disable_text`
+3. 是否需要把 `direct_v2` 的稳定性优点进一步借给新的 residual 设计

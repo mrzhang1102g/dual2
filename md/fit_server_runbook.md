@@ -186,8 +186,31 @@
 
 | setting | MAE | MSE | RMSE | MAPE | WAPE |
 |---|---:|---:|---:|---:|---:|
-| `direct_v2 + ckpt + unfreeze` | pending | pending | pending | pending | pending |
-| `residual_v2 + ckpt + unfreeze` | pending | pending | pending | pending | pending |
+| `direct_v2 + ckpt + unfreeze` | 0.079404 | 0.011418 | 0.106854 | 29.18% | 17.13% |
+| `residual_v2 + ckpt + unfreeze` | 0.079863 | 0.011669 | 0.108021 | 28.60% | 17.23% |
+
+### 0414 v2 控制实验：20 epoch
+
+#### disable_text
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct_v2 + ckpt + unfreeze + disable_text` | 0.080189 | 0.011770 | 0.108491 | 28.75% | 17.30% |
+| `residual_v2 + ckpt + unfreeze + disable_text` | 0.080189 | 0.011770 | 0.108491 | 28.75% | 17.30% |
+
+#### filler text
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct_v2 + ckpt + unfreeze + filler` | 0.079494 | 0.011439 | 0.106952 | 29.26% | 17.15% |
+| `residual_v2 + ckpt + unfreeze + filler` | 0.079827 | 0.011651 | 0.107941 | 28.72% | 17.22% |
+
+#### random text
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct_v2 + ckpt + unfreeze + random` | 0.079525 | 0.011442 | 0.106967 | 29.33% | 17.16% |
+| `residual_v2 + ckpt + unfreeze + random` | 0.079860 | 0.011664 | 0.108002 | 28.65% | 17.23% |
 
 ## 0414 首轮之后的判据
 
@@ -196,14 +219,40 @@
 1. `residual_v2` 是否稳定优于 `direct_v2`
 2. 结构上是否已经具备“文本必须参与预测”的前提
 
-如果 `residual_v2` 表现更稳：
+当前第一轮结果说明：
 
-- 第二轮再补
-  - `disable_text`
-  - `random`
-  - `filler`
+- `direct_v2` 已经是当前最强的 direct 版本，`MAE / WAPE` 都优于现阶段的 `residual_v2`
+- `residual_v2` 在 `MAPE` 上更好，说明它在比例误差层面有一定优势
+- 因此现在不能直接宣称“v2 residual 已经赢过 v2 direct”
+- 但 `residual_v2` 仍然是更适合做文本控制实验的主方法，因为它的结构明确要求文本参与纠偏
 
-如果 `residual_v2` 仍然和纯数值对照差不多：
+当前控制实验结果说明：
 
-- 说明还需要继续做结构层重写
-- 不再优先堆更多文本视角
+- `direct_v2` 的真实文本、filler、random 都非常接近，而且都只比 `disable_text` 略好一点
+- `residual_v2` 的真实文本、filler、random、`disable_text` 几乎完全重合
+
+因此 0414 v2 当前最准确的结论是：
+
+- 第三代结构比第二代更稳，尤其是 `direct_v2`
+- 但文本语义贡献仍然没有被坐实
+- `direct_v2` 更像“加入文本分支后带来轻微辅助增益”，而不是“真实文本语义被显著利用”
+- `residual_v2` 在结构上更合理，但目前还没有把这种结构约束兑现成明显的语义增益
+
+所以下一步优先级调整为：
+
+- 需要继续改结构，而不是先拉 `100 epoch`
+
+如果后续再做第四代结构，重点应该是：
+
+- 不只是“让文本进入公式”
+- 而是让“文本内容不同”必须导致不同纠偏策略
+
+也就是说，下一轮应该重点处理：
+
+- 为什么 `text_coeff` 对 real / filler / random 的区分仍然这么弱
+- 为什么 `direct_v2` 只得到轻微增益，却没有形成清晰的语义排序
+
+如果下一轮结构仍然出现 `real ≈ filler ≈ random`：
+
+- 说明这版 residual 还不够
+- 需要继续改 residual 结构
