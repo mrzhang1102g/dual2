@@ -1,4 +1,4 @@
-﻿# FIT 服务器执行手册
+﻿﻿﻿# FIT 服务器执行手册
 
 最后更新：2026-04-14
 
@@ -28,11 +28,11 @@
 
 当前正在跑：
 
-- 长文本 random text 的 5 组 half-year 实验
+- 暂无
 
 下一轮准备跑：
 
-- 长文本 filler text 的 5 组 half-year 实验
+- 建议先做 `disable_text` 对照
 
 ## 当前使用的关键文件
 
@@ -136,6 +136,26 @@
 | `residual + ckpt + freeze` | 0.085368 | 0.013135 | 0.114607 | 30.39% | 18.42% |
 | `residual + ckpt + unfreeze` | 0.079866 | 0.011611 | 0.107754 | 28.95% | 17.23% |
 
+## 长文本 random text：20 epoch
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct + ckpt + freeze` | 0.087233 | 0.013407 | 0.115790 | 33.08% | 18.82% |
+| `direct + scratch` | 0.105321 | 0.018585 | 0.136328 | 40.39% | 22.72% |
+| `direct + ckpt + unfreeze` | 0.081796 | 0.011842 | 0.108823 | 30.96% | 17.65% |
+| `residual + ckpt + freeze` | 0.085365 | 0.013130 | 0.114586 | 30.54% | 18.42% |
+| `residual + ckpt + unfreeze` | 0.079736 | 0.011595 | 0.107682 | 28.72% | 17.20% |
+
+## 长文本 filler text：20 epoch
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct + ckpt + freeze` | 0.087151 | 0.013434 | 0.115905 | 33.05% | 18.80% |
+| `direct + scratch` | 0.105571 | 0.018621 | 0.136458 | 40.74% | 22.77% |
+| `direct + ckpt + unfreeze` | 0.081904 | 0.011866 | 0.108930 | 30.96% | 17.67% |
+| `residual + ckpt + freeze` | 0.085345 | 0.013124 | 0.114561 | 30.51% | 18.41% |
+| `residual + ckpt + unfreeze` | 0.079818 | 0.011610 | 0.107749 | 28.81% | 17.22% |
+
 ## 当前已确认结论
 
 ### 结论 1
@@ -181,9 +201,23 @@
   - `MAPE = 25.23%`
   - `WAPE = 15.39%`
 
+### 结论 7
+
+`random text` 和 `filler text` 与真实长文本结果几乎一致。
+
+这说明当前模型的提升基本不能归因于文本语义本身。
+
+### 结论 8
+
+当前结果更像是：
+
+- `ckpt + unfreeze` 这一训练 recipe 本身带来了提升
+- `residual` 的硬数值 skip 比 `direct` 更稳
+- 文本内容是否真实、随机、无语义，占比都非常小
+
 ## 当前对照实验说明
 
-新增两类控制文本：
+已经完成两类控制文本：
 
 - random text
 - filler text
@@ -202,29 +236,22 @@
 
 ## 下一步
 
-### 当前正在跑
+当前最高价值、且不需要改模型代码的实验是：
 
-先把 long-text random text 的 5 组跑完。
+1. `direct + ckpt + unfreeze + disable_text`
+2. `residual + ckpt + unfreeze + disable_text`
 
-### 下一轮
+对应脚本：
 
-把 5 个 half-year 脚本的 `caption_emb_path` 切到：
+- [fit_fusion_halfyear_direct_from_ckpt_disable_text.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_from_ckpt_disable_text.sh)
+- [fit_fusion_halfyear_residual_unfreeze_disable_text.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_unfreeze_disable_text.sh)
 
-- `./dataset/FIT_DualSG/pt/fit_dualsg_filler_text.pt`
+如果这两组结果仍然接近当前最好结果，就可以基本确认：
 
-然后再跑一轮 long-text filler text 的 5 组。
+- 当前新版 fusion 的主要增益来自数值流继续训练和数值辅助纠偏
+- 不是来自文本语义
 
-### 跑完后优先比较
+不建议把 5 组都跑成 `disable_text`，因为：
 
-1. 真实长文本
-2. random text
-3. filler text
-
-如果：
-
-- 真实长文本明显优于 random / filler
-  - 说明文本语义对当前模型是有贡献的
-- 真实长文本和 random 很接近
-  - 说明模型可能主要利用了弱分布信号，而不是严格语义配对
-- random 和 filler 也很接近
-  - 说明当前 fusion 还没有真正把文本语义用起来
+- `direct/residual + ckpt + freeze + disable_text` 基本只会退化成数值 checkpoint 自身
+- `direct + scratch + disable_text` 更像另一种数值流重训，对定位“文本到底有没有作用”价值不高

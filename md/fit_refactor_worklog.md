@@ -1,4 +1,4 @@
-﻿# FIT 重构工作记录
+﻿﻿﻿# FIT 重构工作记录
 
 最后更新：2026-04-14
 
@@ -176,8 +176,44 @@
 
 当前状态：
 
-- 长文本 random text 的 5 组实验已经开始跑
-- 下一轮准备跑长文本 filler text 的 5 组实验
+- 长文本 random text 的 5 组实验已完成
+- 长文本 filler text 的 5 组实验已完成
+
+random text 结果：
+
+- `direct + ckpt + freeze`
+  - `MAE = 0.087233`
+  - `MAPE = 33.08%`
+- `direct + scratch`
+  - `MAE = 0.105321`
+  - `MAPE = 40.39%`
+- `direct + ckpt + unfreeze`
+  - `MAE = 0.081796`
+  - `MAPE = 30.96%`
+- `residual + ckpt + freeze`
+  - `MAE = 0.085365`
+  - `MAPE = 30.54%`
+- `residual + ckpt + unfreeze`
+  - `MAE = 0.079736`
+  - `MAPE = 28.72%`
+
+filler text 结果：
+
+- `direct + ckpt + freeze`
+  - `MAE = 0.087151`
+  - `MAPE = 33.05%`
+- `direct + scratch`
+  - `MAE = 0.105571`
+  - `MAPE = 40.74%`
+- `direct + ckpt + unfreeze`
+  - `MAE = 0.081904`
+  - `MAPE = 30.96%`
+- `residual + ckpt + freeze`
+  - `MAE = 0.085345`
+  - `MAPE = 30.51%`
+- `residual + ckpt + unfreeze`
+  - `MAE = 0.079818`
+  - `MAPE = 28.81%`
 
 ## 当前最重要的待验证问题
 
@@ -185,40 +221,54 @@
 
 如果把真实长文本换成 random text，结果会不会明显下降？
 
-如果会明显下降，说明：
+现在答案已经比较明确：
 
-- 当前模型确实在利用文本和数值序列之间的语义对应关系
+- 不会明显下降
 
-如果不会明显下降，说明：
+说明：
 
-- 当前文本分支可能主要只利用了分布层面的弱信号
+- 当前文本分支没有显著利用文本和数值序列之间的语义对应关系
 
 ### 问题 2
 
 如果 filler text 和 random text 结果也差不多，说明：
 
+现在答案也比较明确：
+
+- 是的，二者和真实文本都差不多
+
+说明：
+
 - 当前 fusion 很可能还没有真正把文本语义用起来
 
 ### 问题 3
 
-如果 random / filler 都显著差于真实长文本，再去比较：
+既然 random / filler 和真实长文本几乎一样，当前阶段更合理的判断是：
 
-- 长文本
-- 结构化文本
-- 多视角文本
-
-这个对比才更有意义
+- 现在这套模型里，文本内容本身不是主导因素
+- 当前主导因素更像是：
+  - `ckpt + unfreeze`
+  - `residual` 的硬数值 skip
+  - 融合头里对数值侧辅助特征的利用
 
 ## 当前阶段建议
 
 先不要继续改 fusion 结构。
 
-当前最合理的顺序是：
+当前最合理的下一步是：
 
-1. 跑完 long-text random text 的 5 组
-2. 再跑 long-text filler text 的 5 组
-3. 对比：
-   - 真实长文本
-   - random text
-   - filler text
-4. 只有在这一步结论清楚后，再决定是否回头继续改模型结构
+1. 先跑两个 `disable_text` 对照：
+   - `direct + ckpt + unfreeze + disable_text`
+   - `residual + ckpt + unfreeze + disable_text`
+2. 如果它们仍然接近当前最好结果，就可以基本坐实：
+   - 当前新版 fusion 的增益不是来自文本语义
+3. 然后再决定：
+   - 是回退旧版 fusion 头做严格 A/B
+   - 还是继续重写新版 fusion，让文本必须真正参与预测
+
+2026-04-14 已补好两个对应脚本：
+
+- `fit_fusion_halfyear_direct_from_ckpt_disable_text.sh`
+- `fit_fusion_halfyear_residual_unfreeze_disable_text.sh`
+
+当前不建议把 5 组都补成 `disable_text`，因为最有信息量的就是这两组主路线。
