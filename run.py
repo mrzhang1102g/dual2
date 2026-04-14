@@ -169,6 +169,7 @@ def add_fusion_args(parser):
     parser.add_argument("--num_model_path", type=str, default="")
     parser.add_argument("--caption_emb_path", type=str, default=None)
 
+    parser.add_argument("--fusion_version", type=str, default="modern", choices=["modern", "legacy"])
     parser.add_argument("--freeze_numerical", action="store_true")
     parser.add_argument("--disable_text", action="store_true")
     parser.add_argument("--text_mode", type=str, default="direct", choices=["direct", "residual"])

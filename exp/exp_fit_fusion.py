@@ -35,7 +35,9 @@ class Exp_Fit_Fusion(Exp_Basic):
 
     def _build_model(self, args):
         num_ckpt = getattr(args, "num_model_path", None)
+        fusion_version = getattr(args, "fusion_version", "modern")
         self.log(f"num_ckpt: {num_ckpt}")
+        self.log(f"fusion_version: {fusion_version}")
 
         model = FusionModel(args, numerical_ckpt_path=num_ckpt).float()
         if args.use_multi_gpu and args.use_gpu:

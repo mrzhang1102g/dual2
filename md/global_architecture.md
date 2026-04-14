@@ -4,12 +4,12 @@
 
 ## 文档定位
 
-这份文档只描述当前仓库里 FIT 相关代码的真实实现。
+这份文档只描述当前仓库里 FIT 相关代码的真实实现，以及当前阶段 legacy 恢复诊断的入口。
 
 配套文档：
 
 - [fit_server_runbook.md](/D:/zhangjing/project/Dualsg_refined/md/fit_server_runbook.md)
-  当前实验结果、服务器执行记录、对照实验结论
+  当前实验结果、服务器执行记录、legacy 诊断脚本
 - [fit_refactor_worklog.md](/D:/zhangjing/project/Dualsg_refined/md/fit_refactor_worklog.md)
   本轮整理、重构、当前阶段结论
 - [项目文件结构.md](/D:/zhangjing/project/Dualsg_refined/md/项目文件结构.md)
@@ -57,20 +57,6 @@
 - `models/model_fit_num.py`
 - `models/model_fit_num_with_meta.py`
 - `models/model_fit_fusion.py`
-
-脚本层：
-
-- `fit_halfyear_num.sh`
-- `fit_halfyear_num_with_meta.sh`
-- `fit_oneyear_num.sh`
-- `fit_oneyear_num_with_meta.sh`
-- `fit_fusion_halfyear_direct.sh`
-- `fit_fusion_halfyear_direct_freeze.sh`
-- `fit_fusion_halfyear_direct_from_ckpt.sh`
-- `fit_fusion_halfyear_residual.sh`
-- `fit_fusion_halfyear_residual_unfreeze.sh`
-- `fit_fusion_halfyear_direct_from_ckpt_disable_text.sh`
-- `fit_fusion_halfyear_residual_unfreeze_disable_text.sh`
 
 ## 数据层
 
@@ -132,15 +118,26 @@
 
 这个接口只给 fusion 读取中间特征，不改变数值 baseline 的训练方式。
 
-## FIT fusion
+## FIT Fusion
 
-### 当前定位
+### 总体接口
 
-当前 FIT fusion 仍然使用预处理好的 `caption_emb`，不在训练时接 raw text encoder。
+当前 FIT fusion 统一通过：
+
+- `Model_Fit_Fusion`
+
+对外关键参数：
+
+- `fusion_version = modern / legacy`
+- `text_mode = direct / residual`
+- `num_model_path`
+- `freeze_numerical`
+- `disable_text`
+- `fusion_optimizer_mode = unified / split`
 
 ### 数值 backbone 复用方式
 
-FIT fusion 当前复用：
+FIT fusion 当前统一复用：
 
 - `Model_Fit_Num_With_Meta`
 
@@ -154,56 +151,87 @@ FIT fusion 当前复用：
 - 中间特征 `encoded_tokens`
 - 数值摘要 `summary_state`
 
-### 当前主体结构
+### `fusion_version = modern`
 
-当前新版 FIT fusion 不是“文本单独预测一个序列，再和数值结果浅加权”，而是“文本先调制数值中间特征，再输出预测”。
+当前新版 fusion 的核心思路是：
+
+- 文本先调制数值 backbone 的中间特征
+- 再从共享上下文输出 `direct / residual`
 
 核心链路：
 
 - `caption_emb -> text_adapter`
-- 文本生成条件参数 `gamma / beta`
+- 文本生成 `gamma / beta`
 - `gamma / beta` 调制 `encoded_tokens`
-- 再从融合上下文里输出最终预测
+- 再把：
+  - 文本上下文
+  - 调制后的数值摘要
+  - 原始数值预测 `y_num` 的摘要
+  - 历史统计特征
+  拼成共享上下文
 
-融合上下文来自：
-
-- 文本上下文
-- 调制后的数值摘要
-- 原始数值预测 `y_num` 的摘要
-- 历史统计特征
-
-### `direct`
-
-参数：
+#### modern direct
 
 - `text_mode=direct`
-
-语义：
-
-- 文本先调制数值 latent
-- 再从融合上下文直接输出最终未来序列
+- 从共享上下文直接输出最终未来序列
 
 注意：
 
-- 当前新版 `direct` 没有旧版那种显式的 `y_num` 硬 skip
-- 所以它更灵活，但也更容易让模型不稳定
+- 当前新版 `direct` 没有旧版那种显式 `y_num` 硬 skip
+- 这也是新版更容易“绕开文本”的重要原因之一
 
-### `residual`
-
-参数：
+#### modern residual
 
 - `text_mode=residual`
-
-语义：
-
 - 先得到数值主预测 `y_num`
-- 再输出一个有边界的纠偏量
+- 再输出一个有边界的纠偏量 `delta`
+- 最终：
+  - `y_final = y_num + delta`
 
-最终形式：
+### `fusion_version = legacy`
 
-- `y_final = y_num + delta`
+当前已恢复 legacy 头，但仍运行在现在这套清理后的训练框架里。
 
-因此 `residual` 天然比 `direct` 更稳。
+也就是说：
+
+- 用的是当前的 data loader
+- 用的是当前的 train-only scaler
+- 用的是当前的 `Exp_Fit_Fusion`
+- 只是把 fusion 头切回旧思路
+
+#### legacy direct
+
+旧版显式数值 skip：
+
+- `caption_emb -> y_text`
+- `y_final = (1 - w) * y_num + w * y_text`
+
+这里的 `w` 继续支持：
+
+- `direct_w_mode = learned / fixed`
+- `direct_w_fixed`
+
+legacy direct 的关键特点是：
+
+- 文本分支单独生成一条预测
+- 数值主预测 `y_num` 直接参与最终输出
+- 因此比新版 direct 更保守、更稳定
+
+#### legacy residual
+
+旧版纠偏路径：
+
+- 输入为 `[caption_emb, phi(y_num.detach()), vol]`
+- 输出 `delta_y` 和 `gain`
+- 最终：
+  - `y_final = y_num + gain * delta_y`
+
+legacy residual 的关键特点是：
+
+- 数值主预测始终保留
+- 文本主要承担纠偏角色
+- `phi(y_num)` 继续 `detach`
+- `delta_scale / force_gain / use_vol_prior` 只在这条分支里参与
 
 ### `disable_text`
 
@@ -211,104 +239,53 @@ FIT fusion 当前复用：
 
 - `--disable_text`
 
-语义：
+当前两种 `fusion_version` 的语义已经统一：
 
-- fusion loader 仍然会读入 `caption_emb`
-- 但模型会直接返回数值预测
-- `text_mode=direct` 和 `text_mode=residual` 不再参与实际 forward
+- loader 仍然会读入 `caption_emb`
+- 但模型会直接返回数值预测 `y_num`
+- 并冻结所有非数值参数
 
 所以：
 
 - `direct + disable_text`
 - `residual + disable_text`
 
-在当前实现里本质上是同一个实验。
+在当前实现里本质上是同一个纯数值对照。
 
-### 当前已移除的旧思路
+## 当前实验结论
 
-FIT 当前实现已经不再依赖：
-
-- `beta_delta`
-- `force_gain`
-- 写死输入维度的 `llm_dim`
-
-## 当前脚本语义
-
-### half-year
-
-- `fit_fusion_halfyear_direct.sh`
-  - `direct`
-  - 从头训练
-- `fit_fusion_halfyear_direct_freeze.sh`
-  - `direct`
-  - 加载数值 ckpt
-  - 冻结数值流
-- `fit_fusion_halfyear_direct_from_ckpt.sh`
-  - `direct`
-  - 加载数值 ckpt
-  - 不冻结数值流
-- `fit_fusion_halfyear_residual.sh`
-  - `residual`
-  - 加载数值 ckpt
-  - 冻结数值流
-- `fit_fusion_halfyear_residual_unfreeze.sh`
-  - `residual`
-  - 加载数值 ckpt
-  - 不冻结数值流
-- `fit_fusion_halfyear_direct_from_ckpt_disable_text.sh`
-  - `disable_text`
-  - 当前用于验证文本是否真正起作用
-- `fit_fusion_halfyear_residual_unfreeze_disable_text.sh`
-  - `disable_text`
-  - 当前用于验证文本是否真正起作用
-
-### one-year
-
-语义和 half-year 对应，只是 `pred_len=24`。
-
-## 当前默认训练配置
-
-当前 FIT fusion 脚本默认：
-
-- `train_epochs=20`
-- `batch_size=200`
-- `patience=100`
-- `fusion_optimizer_mode=split`
-- `learning_rate=0.001`
-- `lr_num=0.0001`
-- `lr_text=0.0005`
-- `adjust=0`
-- `fit_scaler_mode=train_only`
-
-当前脚本都是显式常量写法，直接改 `.sh` 即可。
-
-## 当前实验结论对应到架构的解释
-
-当前最关键的实验结论是：
+当前 modern 版本已经被以下对照基本坐实：
 
 - 真实长文本
 - random text
 - filler text
-- `disable_text`
+- disable_text
 
-这几类结果都非常接近。
+结果几乎一样。
 
-这说明当前新版 fusion 的主要问题不是“文本 prompt 不够好”，而是：
+因此当前最准确的结论是：
 
-- 当前结构允许模型几乎完全绕开文本
-- 模型可以只依赖数值侧特征，也拿到几乎一样的结果
+- 当前 modern fusion 的主要增益不是来自文本语义
+- 更像来自：
+  - `num_ckpt + unfreeze`
+  - `residual` 的硬数值 skip
+  - 数值侧辅助特征本身
 
-因此当前结构上的真实问题是：
+换句话说：
 
-- 文本并没有被强制真正参与预测
+- current modern 结构允许模型几乎完全忽略文本
 
-## 当前阶段建议
+## 当前阶段的重点
 
-当前这个版本的 half-year FIT 实验已经基本收束。
+当前不再优先继续堆更多文本版本。
 
-再继续换更多文本版本，价值已经不高。
+当前最有价值的事情是：
 
-更合理的下一步只有两条：
+- 在相同训练框架下比较 `modern` 和 `legacy`
 
-1. 回退旧版 fusion 头，在当前整理后的训练体系下做严格 A/B
-2. 继续重写新版 fusion，让文本必须真正参与预测
+首轮只跑：
+
+- `legacy direct + ckpt + unfreeze + real long text`
+- `legacy residual + ckpt + unfreeze + real long text`
+
+如果 legacy 能明显追回旧版优势，再补 `random / filler` 对照。

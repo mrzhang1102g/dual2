@@ -210,3 +210,45 @@ random / filler / 真实长文本 结果几乎一样。
 - `WAPE = 15.39%`
 
 当前新版 fusion 还明显没有追上这组结果。
+
+## 当前进入 legacy 恢复阶段
+
+当前分支不再继续堆更多文本版本，而是开始做：
+
+- old heads, new framework
+
+也就是：
+
+- 保留当前清理过的数据层
+- 保留 train-only scaler
+- 保留当前 `Exp_Fit_Fusion`
+- 保留当前脚本/输出结构
+- 只把旧版 `direct` / `residual` fusion 头恢复回来
+
+本轮已经落地：
+
+- `run.py` 新增 `fusion_version = modern / legacy`
+- `Model_Fit_Fusion` 内部同时支持：
+  - `modern + direct/residual`
+  - `legacy + direct/residual`
+- `disable_text` 在两种 version 下都统一为：
+  - 直接返回 `y_num`
+  - 冻结所有非数值参数
+
+新增诊断脚本：
+
+- `fit_fusion_halfyear_legacy_direct_from_ckpt.sh`
+- `fit_fusion_halfyear_legacy_residual_unfreeze.sh`
+
+当前这轮 legacy 恢复的目标不是直接写结论，而是先回答：
+
+- 旧版 fusion 头在现在这套干净训练框架下，还能不能重新追回明显优势
+
+如果 legacy 依然明显强于 current modern：
+
+- 下一轮再补 `random / filler` 对照
+
+如果 legacy 也起不来：
+
+- 说明旧版最好结果未必只来自旧头
+- 下一轮应直接进入“强制使用文本”的结构重写，而不是继续换文本 prompt

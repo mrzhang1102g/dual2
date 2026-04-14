@@ -55,8 +55,10 @@
 - [fit_fusion_halfyear_direct.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct.sh)
 - [fit_fusion_halfyear_direct_freeze.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_freeze.sh)
 - [fit_fusion_halfyear_direct_from_ckpt.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_from_ckpt.sh)
+- [fit_fusion_halfyear_legacy_direct_from_ckpt.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_legacy_direct_from_ckpt.sh)
 - [fit_fusion_halfyear_residual.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual.sh)
 - [fit_fusion_halfyear_residual_unfreeze.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_unfreeze.sh)
+- [fit_fusion_halfyear_legacy_residual_unfreeze.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_legacy_residual_unfreeze.sh)
 - [fit_fusion_halfyear_direct_from_ckpt_disable_text.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_from_ckpt_disable_text.sh)
 - [fit_fusion_halfyear_residual_unfreeze_disable_text.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_unfreeze_disable_text.sh)
 
@@ -255,3 +257,38 @@
 
 1. 回退并恢复旧版 fusion 头，在当前清理后的训练体系下做严格 A/B
 2. 继续重写新版 fusion，让文本必须真正参与预测，而不是可以被数值侧完全绕开
+
+## Legacy 恢复诊断
+
+当前进入新阶段：
+
+- 不回滚整个项目
+- 只把旧版 fusion 头恢复到当前清理后的训练框架里
+- 用同一套 data loader、同一套 scaler、同一套训练脚本做严格 A/B
+
+首轮只跑 half-year + 真实长文本：
+
+- `legacy direct + ckpt + unfreeze`
+- `legacy residual + ckpt + unfreeze`
+
+对应脚本：
+
+- [fit_fusion_halfyear_legacy_direct_from_ckpt.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_legacy_direct_from_ckpt.sh)
+- [fit_fusion_halfyear_legacy_residual_unfreeze.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_legacy_residual_unfreeze.sh)
+
+当前固定配置：
+
+- `fusion_version=legacy`
+- `caption_emb_path=./dataset/FIT_DualSG/pt/fit_dualsg_all.pt`
+- `train_epochs=20`
+- `patience=100`
+- `adjust=0`
+- `fusion_optimizer_mode=split`
+- `fit_scaler_mode=train_only`
+
+结果占位：
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `legacy direct + ckpt + unfreeze` | pending | pending | pending | pending | pending |
+| `legacy residual + ckpt + unfreeze` | pending | pending | pending | pending | pending |
