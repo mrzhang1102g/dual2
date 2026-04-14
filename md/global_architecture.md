@@ -4,18 +4,18 @@
 
 ## 文档定位
 
-这份文档只描述当前仓库里 FIT 相关代码的真实实现，以及当前阶段 legacy 恢复诊断的入口。
+这份文档只描述当前 `0414` 分支里 FIT 的活跃实现。
+
+`0411` 阶段的诊断脚本、旧结构和结果快照已经归档，不再作为当前主线的一部分：
+
+- [fit_halfyear_0411_manifest.md](/D:/zhangjing/project/Dualsg_refined/md/fit_halfyear_0411_manifest.md)
+- [scripts_archive/fit_halfyear_0411/README.md](/D:/zhangjing/project/Dualsg_refined/scripts_archive/fit_halfyear_0411/README.md)
 
 配套文档：
 
-- [fit_halfyear_0411_manifest.md](/D:/zhangjing/project/Dualsg_refined/md/fit_halfyear_0411_manifest.md)
-  0411 阶段 half-year 脚本快照与实验分组总表
 - [fit_server_runbook.md](/D:/zhangjing/project/Dualsg_refined/md/fit_server_runbook.md)
-  当前实验结果、服务器执行记录、legacy 诊断脚本
 - [fit_refactor_worklog.md](/D:/zhangjing/project/Dualsg_refined/md/fit_refactor_worklog.md)
-  本轮整理、重构、当前阶段结论
 - [项目文件结构.md](/D:/zhangjing/project/Dualsg_refined/md/项目文件结构.md)
-  当前项目文件树
 
 ## 当前入口
 
@@ -40,27 +40,7 @@
 - `FIT_Meta` -> `data_provider/data_loader_fit_num_meta.py`
 - `FIT_Fusion` -> `data_provider/data_loader_fit_fusion.py`
 
-## FIT 关键文件
-
-数据层：
-
-- `data_provider/fit_dataset_utils.py`
-- `data_provider/data_loader_fit_num_meta.py`
-- `data_provider/data_loader_fit_fusion.py`
-- `data_provider/data_factory.py`
-
-实验层：
-
-- `exp/exp_fit_num.py`
-- `exp/exp_fit_fusion.py`
-
-模型层：
-
-- `models/model_fit_num.py`
-- `models/model_fit_num_with_meta.py`
-- `models/model_fit_fusion.py`
-
-## 数据层
+## FIT 数据契约
 
 当前 FIT 数值数据仍然读取：
 
@@ -70,25 +50,33 @@
 
 - `caption_emb_path -> *.pt`
 
-`fit_dataset_utils.py` 统一负责：
+也就是说：
 
-- `CITY_MAP / GENDER_MAP / AGE_MAP`
-- `group` 解析
-- `element_map`
-- train / val / test 切分
-- 标准化
-- 时间特征
-- `caption_emb` 对齐
-- 进程内缓存
+- `json` 决定样本顺序、数值序列和 meta
+- `pt` 只在这个顺序上提供每条样本对应的文本 embedding
 
-当前默认 scaler 语义：
+因此切换长文本、结构化文本、random text、filler text 时：
+
+- 不需要换 `json`
+- 只需要换 `caption_emb_path`
+
+前提是：
+
+- `pt` 的样本数必须和 `fit_dualsg_all.json` 一致
+- 顺序必须严格一致
+
+## 标准化
+
+当前 FIT 默认使用：
 
 - `fit_scaler_mode=train_only`
 
 含义：
 
 - 只用 train split 拟合 scaler
-- val / test 复用同一个 train-fit scaler
+- val / test 复用这个 train-fit scaler
+
+这是当前推荐的正式语义。
 
 ## 数值流
 
@@ -104,7 +92,7 @@
 
 `run.py` -> `Exp_Fit_Num` -> `Dataset_DualSG_Fit_Num_Meta` -> `Model_Fit_Num_With_Meta`
 
-这是当前 FIT 最强的数值 baseline，也是 fusion 当前复用的数值 backbone。
+这是当前 FIT 最强的数值 baseline，也是 fusion 当前复用的 backbone。
 
 ### `Model_Fit_Num_With_Meta`
 
@@ -120,174 +108,190 @@
 
 这个接口只给 fusion 读取中间特征，不改变数值 baseline 的训练方式。
 
-## FIT Fusion
+## 0414 FIT Fusion 主线
 
-### 总体接口
+### 总体原则
 
-当前 FIT fusion 统一通过：
+`0414` 活跃代码只保留一套新主线，不再在运行时保留 `modern / legacy` 切换。
 
-- `Model_Fit_Fusion`
-
-对外关键参数：
-
-- `fusion_version = modern / legacy`
-- `text_mode = direct / residual`
-- `num_model_path`
-- `freeze_numerical`
-- `disable_text`
-- `fusion_optimizer_mode = unified / split`
-
-### 数值 backbone 复用方式
-
-FIT fusion 当前统一复用：
-
-- `Model_Fit_Num_With_Meta`
-
-并通过：
-
-- `extract_features()`
-
-拿到：
-
-- 数值预测 `y_num`
-- 中间特征 `encoded_tokens`
-- 数值摘要 `summary_state`
-
-### `fusion_version = modern`
-
-当前新版 fusion 的核心思路是：
-
-- 文本先调制数值 backbone 的中间特征
-- 再从共享上下文输出 `direct / residual`
-
-核心链路：
-
-- `caption_emb -> text_adapter`
-- 文本生成 `gamma / beta`
-- `gamma / beta` 调制 `encoded_tokens`
-- 再把：
-  - 文本上下文
-  - 调制后的数值摘要
-  - 原始数值预测 `y_num` 的摘要
-  - 历史统计特征
-  拼成共享上下文
-
-#### modern direct
+当前 `Model_Fit_Fusion` 只有两个模式：
 
 - `text_mode=direct`
-- 从共享上下文直接输出最终未来序列
-
-注意：
-
-- 当前新版 `direct` 没有旧版那种显式 `y_num` 硬 skip
-- 这也是新版更容易“绕开文本”的重要原因之一
-
-#### modern residual
-
 - `text_mode=residual`
-- 先得到数值主预测 `y_num`
-- 再输出一个有边界的纠偏量 `delta`
-- 最终：
-  - `y_final = y_num + delta`
 
-### `fusion_version = legacy`
+两者共用：
 
-当前已恢复 legacy 头，但仍运行在现在这套清理后的训练框架里。
+- 同一个数值 backbone：`Model_Fit_Num_With_Meta`
+- 同一个共享文本适配器：`caption_emb -> text_proj -> text_ctx`
+
+### 当前关键参数
+
+当前 0414 主线真正使用的 FIT fusion 参数：
+
+- `text_mode`
+- `num_model_path`
+- `caption_emb_path`
+- `freeze_numerical`
+- `disable_text`
+- `fusion_optimizer_mode`
+- `lr_num`
+- `lr_text`
+- `weight_decay_text`
+- `text_hidden`
+- `residual_rank`
+- `num_feat_dim`
+- `fusion_hidden`
+- `fusion_dropout`
+
+## Direct v2
+
+### 设计目标
+
+`direct` 是一条可解释的双流基线。
+
+它不追求一定强于 residual，但必须满足两点：
+
+1. 文本流单独生成预测
+2. 数值主预测 `y_num` 显式进入最终输出
+
+### 结构
+
+数值流：
+
+- 数值 backbone 输出 `y_num`
+
+文本流：
+
+- `caption_emb -> text_proj -> text_ctx`
+- `text_ctx -> direct_text_head -> y_text`
+
+融合门控：
+
+- `gate_input = [text_ctx, summary_ctx, y_num_ctx, hist_ctx]`
+- `gate = sigmoid(direct_gate_head(gate_input))`
+
+最终输出：
+
+- `y_final = (1 - gate) * y_num + gate * y_text`
+
+其中：
+
+- `gate` 是逐步预测的 `[B, pred_len, C]`
+- 不是全局标量
+
+### 当前含义
+
+这条路保留了强显式数值 skip。
+
+因此：
+
+- 即使文本流还不够强
+- `direct` 也不会像之前那版 “把 `y_num` 埋进大 MLP” 一样容易失稳
+
+## Residual v2
+
+### 设计目标
+
+`residual` 是当前主方法。
+
+它的目标不是“再做一个纯数值纠偏器”，而是：
+
+- 数值侧只生成可供纠偏的 basis
+- 文本侧必须提供 basis 系数和纠偏幅度控制
+
+这样能在结构上避免“只靠数值侧就把 delta 直接算出来”的旁路。
+
+### 结构
+
+主预测：
+
+- 数值 backbone 输出 `y_num`
+
+数值侧上下文：
+
+- `encoded_tokens`
+- `summary_state`
+- `y_num`
+- `hist_stats`
+
+数值侧 basis：
+
+- `basis_input = [encoded_ctx, summary_ctx, y_num_ctx, hist_ctx]`
+- `residual_basis = residual_basis_head(basis_input)`
+- reshape 为 `[B, pred_len, C, R]`
+
+文本侧控制：
+
+- `text_ctx = text_proj(caption_emb)`
+- `text_coeff = residual_text_coeff_head(text_ctx)`
+- reshape 为 `[B, pred_len, R]`
+
+纠偏幅度：
+
+- `radius_input = [text_ctx, hist_ctx]`
+- `radius = sigmoid(residual_radius_head(radius_input))`
+
+最终纠偏：
+
+- `delta_raw = sum_k residual_basis[..., k] * text_coeff[..., k]`
+- `delta = radius * tanh(delta_raw)`
+- `y_final = y_num + delta`
+
+### 当前约束
+
+当前 residual 里不存在：
+
+- “纯数值 MLP 直接输出 `delta`” 的路径
 
 也就是说：
 
-- 用的是当前的 data loader
-- 用的是当前的 train-only scaler
-- 用的是当前的 `Exp_Fit_Fusion`
-- 只是把 fusion 头切回旧思路
+- 如果没有文本系数
+- residual basis 不能自己变成最终纠偏量
 
-#### legacy direct
-
-旧版显式数值 skip：
-
-- `caption_emb -> y_text`
-- `y_final = (1 - w) * y_num + w * y_text`
-
-这里的 `w` 继续支持：
-
-- `direct_w_mode = learned / fixed`
-- `direct_w_fixed`
-
-legacy direct 的关键特点是：
-
-- 文本分支单独生成一条预测
-- 数值主预测 `y_num` 直接参与最终输出
-- 因此比新版 direct 更保守、更稳定
-
-#### legacy residual
-
-旧版纠偏路径：
-
-- 输入为 `[caption_emb, phi(y_num.detach()), vol]`
-- 输出 `delta_y` 和 `gain`
-- 最终：
-  - `y_final = y_num + gain * delta_y`
-
-legacy residual 的关键特点是：
-
-- 数值主预测始终保留
-- 文本主要承担纠偏角色
-- `phi(y_num)` 继续 `detach`
-- `delta_scale / force_gain / use_vol_prior` 只在这条分支里参与
-
-### `disable_text`
+## Disable Text
 
 参数：
 
 - `--disable_text`
 
-当前两种 `fusion_version` 的语义已经统一：
+当前语义是：
 
-- loader 仍然会读入 `caption_emb`
-- 但模型会直接返回数值预测 `y_num`
-- 并冻结所有非数值参数
+- 直接返回数值预测 `y_num`
+- 冻结所有非数值参数
 
-所以：
+因此它是一个严格的纯数值对照。
 
-- `direct + disable_text`
-- `residual + disable_text`
+## 当前脚本入口
 
-在当前实现里本质上是同一个纯数值对照。
+当前 0414 活跃的 FIT half-year fusion 脚本只有两个：
 
-## 当前实验结论
+- [fit_fusion_halfyear_direct_v2.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v2.sh)
+- [fit_fusion_halfyear_residual_v2.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v2.sh)
 
-当前 modern 版本已经被以下对照基本坐实：
+首轮固定配置：
 
-- 真实长文本
-- random text
-- filler text
-- disable_text
+- `half-year`
+- `real long text = ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt`
+- `num_model_path = ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth`
+- `unfreeze numerical`
+- `train_epochs = 20`
+- `patience = 100`
+- `adjust = 0`
+- `fusion_optimizer_mode = split`
+- `fit_scaler_mode = train_only`
 
-结果几乎一样。
+## 0411 归档和 0414 主线的关系
 
-因此当前最准确的结论是：
+`0411` 已经完成的事情：
 
-- 当前 modern fusion 的主要增益不是来自文本语义
-- 更像来自：
-  - `num_ckpt + unfreeze`
-  - `residual` 的硬数值 skip
-  - 数值侧辅助特征本身
+- modern / legacy 结构诊断
+- random / filler / disable_text 控制实验
+- structured / multi-view 文本诊断
+- 旧脚本归档
 
-换句话说：
+`0414` 的定位是：
 
-- current modern 结构允许模型几乎完全忽略文本
-
-## 当前阶段的重点
-
-当前不再优先继续堆更多文本版本。
-
-当前最有价值的事情是：
-
-- 在相同训练框架下比较 `modern` 和 `legacy`
-
-首轮只跑：
-
-- `legacy direct + ckpt + unfreeze + real long text`
-- `legacy residual + ckpt + unfreeze + real long text`
-
-如果 legacy 能明显追回旧版优势，再补 `random / filler` 对照。
+- 不再继续堆旧结构实验
+- 直接进入一套更干净的新主线
+- 重点不是“换更多 prompt”
+- 而是“从结构上减少文本被绕开的可能性”

@@ -169,12 +169,13 @@ def add_fusion_args(parser):
     parser.add_argument("--num_model_path", type=str, default="")
     parser.add_argument("--caption_emb_path", type=str, default=None)
 
-    parser.add_argument("--fusion_version", type=str, default="modern", choices=["modern", "legacy"])
     parser.add_argument("--freeze_numerical", action="store_true")
     parser.add_argument("--disable_text", action="store_true")
     parser.add_argument("--text_mode", type=str, default="direct", choices=["direct", "residual"])
     parser.add_argument("--fusion_optimizer_mode", type=str, default="unified", choices=["unified", "split"])
 
+    parser.add_argument("--text_hidden", type=int, default=128)
+    parser.add_argument("--residual_rank", type=int, default=8)
     parser.add_argument("--num_feat_dim", type=int, default=48)
     parser.add_argument("--fusion_dropout", type=float, default=0.1)
     parser.add_argument("--fusion_hidden", type=int, default=96)

@@ -1,11 +1,4 @@
-"""
-FIT 融合流实验。
-
-保持现有融合思路不变：
-- 数值主干来自 Model_Fit_Num_With_Meta
-- 文本输入仍是离线 caption embedding
-- 支持 direct / residual 两种融合方式
-"""
+"""FIT fusion experiment class."""
 
 import os
 import time
@@ -28,16 +21,16 @@ warnings.filterwarnings("ignore")
 
 
 class Exp_Fit_Fusion(Exp_Basic):
-    """FIT 融合流实验类。"""
+    """FIT fusion experiment class."""
 
     def __init__(self, args):
         super().__init__(args)
 
     def _build_model(self, args):
         num_ckpt = getattr(args, "num_model_path", None)
-        fusion_version = getattr(args, "fusion_version", "modern")
         self.log(f"num_ckpt: {num_ckpt}")
-        self.log(f"fusion_version: {fusion_version}")
+        self.log(f"text_mode: {getattr(args, 'text_mode', 'direct')}")
+        self.log(f"disable_text: {getattr(args, 'disable_text', False)}")
 
         model = FusionModel(args, numerical_ckpt_path=num_ckpt).float()
         if args.use_multi_gpu and args.use_gpu:
@@ -52,9 +45,7 @@ class Exp_Fit_Fusion(Exp_Basic):
     def _select_optimizer(self):
         optimizer_mode = getattr(self.args, "fusion_optimizer_mode", "unified")
         if optimizer_mode == "unified":
-            trainable_params = [
-                param for param in self.model.parameters() if param.requires_grad
-            ]
+            trainable_params = [param for param in self.model.parameters() if param.requires_grad]
             if not trainable_params:
                 raise ValueError("No trainable parameters found for FIT fusion optimizer.")
             return optim.Adam(
@@ -73,11 +64,7 @@ class Exp_Fit_Fusion(Exp_Basic):
             raise ValueError(f"Unsupported fusion_optimizer_mode: {optimizer_mode}")
 
         module = self.model.module if hasattr(self.model, "module") else self.model
-        numerical_param_ids = {
-            id(param)
-            for param in module.numerical_model.parameters()
-            if param.requires_grad
-        }
+        numerical_param_ids = {id(param) for param in module.numerical_model.parameters() if param.requires_grad}
 
         numerical_params = []
         text_fusion_params = []
@@ -136,8 +123,6 @@ class Exp_Fit_Fusion(Exp_Basic):
             caption_emb,
         ) = batch
 
-        # FIT fusion 的 loader 本来就应返回 [B, L, 1]，
-        # 这里保留一个轻量兜底，避免后续切 loader 时 batch 维度不一致。
         if batch_x.dim() == 2:
             batch_x = batch_x.unsqueeze(-1)
         if batch_y.dim() == 2:
@@ -180,9 +165,7 @@ class Exp_Fit_Fusion(Exp_Basic):
         return loss
 
     def _warmup_model(self, train_loader):
-        """
-        某些 LazyLinear 需要先过一次前向，训练前在这里完成初始化。
-        """
+        """Initialize lazy layers before building the optimizer."""
         for _, batch in enumerate(train_loader):
             batch = self._prepare_batch(batch)
             with torch.no_grad():
@@ -214,7 +197,6 @@ class Exp_Fit_Fusion(Exp_Basic):
         path = os.path.join(self.args.checkpoint_dir, setting)
         os.makedirs(path, exist_ok=True)
 
-        # 先 warmup，再建 optimizer，避免 LazyLinear 还没初始化就被优化器捕获。
         self._warmup_model(train_loader)
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
@@ -293,7 +275,7 @@ class Exp_Fit_Fusion(Exp_Basic):
         with torch.no_grad():
             for i, batch in enumerate(test_loader):
                 batch = self._prepare_batch(batch)
-                batch_x, batch_y = batch[0], batch[1]
+                batch_x = batch[0]
                 outputs, target = self._forward_batch(batch)
 
                 pred_np = outputs.detach().cpu().numpy()
@@ -356,7 +338,10 @@ class Exp_Fit_Fusion(Exp_Basic):
 
         if self.args.visualize and preds.size > 0:
             self._plot_predictions(preds, trues, setting, mae, mse, rmse, mape, wape)
-            self.log(f"[TEST][PDF] Saved summary PDF: {os.path.join(self.args.output_dir, setting, 'reports', 'predictions.pdf')}")
+            self.log(
+                f"[TEST][PDF] Saved summary PDF: "
+                f"{os.path.join(self.args.output_dir, setting, 'reports', 'predictions.pdf')}"
+            )
 
         return metrics_tuple
 
