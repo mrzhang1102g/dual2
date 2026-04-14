@@ -1,41 +1,44 @@
-# FIT Architecture
+﻿# FIT 架构文档
 
-最后更新：2026-04-13
+最后更新：2026-04-14
 
-## 1. 文档定位
+## 文档定位
 
-这份文档只描述当前仓库里 FIT 相关的真实实现。
+这份文档只描述当前仓库里 FIT 相关代码的真实实现。
 
 配套文档：
 
-- `fit_refactor_worklog.md`：整理过程、smoke 结果、已知问题和实验结论
-- `fit_server_runbook.md`：服务器执行顺序与结果记录模板
-- `项目文件结构.md`：当前项目文件树
+- [fit_server_runbook.md](/D:/zhangjing/project/Dualsg_refined/md/fit_server_runbook.md)
+  当前实验结果、服务器执行记录、对照实验结论
+- [fit_refactor_worklog.md](/D:/zhangjing/project/Dualsg_refined/md/fit_refactor_worklog.md)
+  本轮整理、重构、当前阶段结论
+- [项目文件结构.md](/D:/zhangjing/project/Dualsg_refined/md/项目文件结构.md)
+  当前项目文件树
 
-## 2. 当前入口
+## 当前入口
 
 统一入口：
 
 - `run.py`
 
-任务与实验类：
+任务到实验类：
 
 - `fit_num` -> `exp/exp_fit_num.py`
 - `fit_num_with_meta` -> `exp/exp_fit_num.py`
 - `fit_fusion` -> `exp/exp_fit_fusion.py`
 
-任务与模型：
+任务到模型：
 
 - `Model_Fit_Num` -> `models/model_fit_num.py`
 - `Model_Fit_Num_With_Meta` -> `models/model_fit_num_with_meta.py`
 - `Model_Fit_Fusion` -> `models/model_fit_fusion.py`
 
-任务与数据集：
+任务到数据集：
 
 - `FIT_Meta` -> `data_provider/data_loader_fit_num_meta.py`
 - `FIT_Fusion` -> `data_provider/data_loader_fit_fusion.py`
 
-## 3. FIT 关键文件
+## FIT 关键文件
 
 数据层：
 
@@ -62,30 +65,29 @@
 - `fit_oneyear_num.sh`
 - `fit_oneyear_num_with_meta.sh`
 - `fit_fusion_halfyear_direct.sh`
+- `fit_fusion_halfyear_direct_freeze.sh`
 - `fit_fusion_halfyear_direct_from_ckpt.sh`
 - `fit_fusion_halfyear_residual.sh`
 - `fit_fusion_halfyear_residual_unfreeze.sh`
-- `fit_fusion_oneyear_direct.sh`
-- `fit_fusion_oneyear_direct_from_ckpt.sh`
-- `fit_fusion_oneyear_residual.sh`
-- `fit_fusion_oneyear_residual_unfreeze.sh`
+- `fit_fusion_halfyear_direct_from_ckpt_disable_text.sh`
+- `fit_fusion_halfyear_residual_unfreeze_disable_text.sh`
 
-## 4. 数据层
+## 数据层
 
-当前 FIT 原始数据仍然读取：
+当前 FIT 数值数据仍然读取：
 
 - `dataset/FIT_DualSG/fit_dualsg_all.json`
 
-当前 FIT fusion 默认读取的文本 embedding 是：
+当前文本输入仍然是离线 embedding：
 
-- `dataset/FIT_DualSG/pt/fit_dualsg_structured.pt`
+- `caption_emb_path -> *.pt`
 
 `fit_dataset_utils.py` 统一负责：
 
 - `CITY_MAP / GENDER_MAP / AGE_MAP`
 - `group` 解析
 - `element_map`
-- train / val / test 划分
+- train / val / test 切分
 - 标准化
 - 时间特征
 - `caption_emb` 对齐
@@ -98,25 +100,25 @@
 含义：
 
 - 只用 train split 拟合 scaler
-- val/test 复用同一个 train-fit scaler
+- val / test 复用同一个 train-fit scaler
 
-## 5. 数值流
+## 数值流
 
-### 5.1 fit_num
+### `fit_num`
 
 链路：
 
 `run.py` -> `Exp_Fit_Num` -> `Dataset_DualSG_Fit_Num_Meta` -> `Model_Fit_Num`
 
-### 5.2 fit_num_with_meta
+### `fit_num_with_meta`
 
 链路：
 
 `run.py` -> `Exp_Fit_Num` -> `Dataset_DualSG_Fit_Num_Meta` -> `Model_Fit_Num_With_Meta`
 
-这是当前最强数值 baseline，也是 FIT fusion 当前复用的数值 backbone。
+这是当前 FIT 最强的数值 baseline，也是 fusion 当前复用的数值 backbone。
 
-### 5.3 `Model_Fit_Num_With_Meta`
+### `Model_Fit_Num_With_Meta`
 
 当前保持原有训练语义不变，只额外提供：
 
@@ -130,13 +132,13 @@
 
 这个接口只给 fusion 读取中间特征，不改变数值 baseline 的训练方式。
 
-## 6. FIT fusion
+## FIT fusion
 
-### 6.1 当前定位
+### 当前定位
 
-当前 FIT fusion 使用预处理好的 `caption_emb`，不在训练时接 raw text encoder。
+当前 FIT fusion 仍然使用预处理好的 `caption_emb`，不在训练时接 raw text encoder。
 
-### 6.2 数值 backbone 复用方式
+### 数值 backbone 复用方式
 
 FIT fusion 当前复用：
 
@@ -152,16 +154,16 @@ FIT fusion 当前复用：
 - 中间特征 `encoded_tokens`
 - 数值摘要 `summary_state`
 
-### 6.3 当前主体结构
+### 当前主体结构
 
-当前 FIT fusion 不是“文本单独再预测一个序列”，而是“文本先调制数值中间特征”。
+当前新版 FIT fusion 不是“文本单独预测一个序列，再和数值结果浅加权”，而是“文本先调制数值中间特征，再输出预测”。
 
-核心结构：
+核心链路：
 
 - `caption_emb -> text_adapter`
 - 文本生成条件参数 `gamma / beta`
-- 用 `gamma / beta` 调制 `encoded_tokens`
-- 再从融合后的上下文里输出最终预测
+- `gamma / beta` 调制 `encoded_tokens`
+- 再从融合上下文里输出最终预测
 
 融合上下文来自：
 
@@ -170,7 +172,7 @@ FIT fusion 当前复用：
 - 原始数值预测 `y_num` 的摘要
 - 历史统计特征
 
-### 6.4 direct 模式
+### `direct`
 
 参数：
 
@@ -181,7 +183,12 @@ FIT fusion 当前复用：
 - 文本先调制数值 latent
 - 再从融合上下文直接输出最终未来序列
 
-### 6.5 residual 模式
+注意：
+
+- 当前新版 `direct` 没有旧版那种显式的 `y_num` 硬 skip
+- 所以它更灵活，但也更容易让模型不稳定
+
+### `residual`
 
 参数：
 
@@ -190,13 +197,34 @@ FIT fusion 当前复用：
 语义：
 
 - 先得到数值主预测 `y_num`
-- 文本分支只预测一个有边界的纠偏量
+- 再输出一个有边界的纠偏量
 
 最终形式：
 
 - `y_final = y_num + delta`
 
-### 6.6 当前已经删除的旧思路
+因此 `residual` 天然比 `direct` 更稳。
+
+### `disable_text`
+
+参数：
+
+- `--disable_text`
+
+语义：
+
+- fusion loader 仍然会读入 `caption_emb`
+- 但模型会直接返回数值预测
+- `text_mode=direct` 和 `text_mode=residual` 不再参与实际 forward
+
+所以：
+
+- `direct + disable_text`
+- `residual + disable_text`
+
+在当前实现里本质上是同一个实验。
+
+### 当前已移除的旧思路
 
 FIT 当前实现已经不再依赖：
 
@@ -204,33 +232,43 @@ FIT 当前实现已经不再依赖：
 - `force_gain`
 - 写死输入维度的 `llm_dim`
 
-## 7. 当前推荐脚本语义
+## 当前脚本语义
 
-### 7.1 半年任务
+### half-year
 
 - `fit_fusion_halfyear_direct.sh`
-  - direct
+  - `direct`
   - 从头训练
+- `fit_fusion_halfyear_direct_freeze.sh`
+  - `direct`
+  - 加载数值 ckpt
+  - 冻结数值流
 - `fit_fusion_halfyear_direct_from_ckpt.sh`
-  - direct
+  - `direct`
   - 加载数值 ckpt
   - 不冻结数值流
 - `fit_fusion_halfyear_residual.sh`
-  - residual
+  - `residual`
   - 加载数值 ckpt
   - 冻结数值流
 - `fit_fusion_halfyear_residual_unfreeze.sh`
-  - residual
+  - `residual`
   - 加载数值 ckpt
   - 不冻结数值流
+- `fit_fusion_halfyear_direct_from_ckpt_disable_text.sh`
+  - `disable_text`
+  - 当前用于验证文本是否真正起作用
+- `fit_fusion_halfyear_residual_unfreeze_disable_text.sh`
+  - `disable_text`
+  - 当前用于验证文本是否真正起作用
 
-### 7.2 一年任务
+### one-year
 
-语义与半年任务对应，只是 `pred_len=24`。
+语义和 half-year 对应，只是 `pred_len=24`。
 
-## 8. 当前脚本默认超参
+## 当前默认训练配置
 
-当前 FIT fusion 默认：
+当前 FIT fusion 脚本默认：
 
 - `train_epochs=20`
 - `batch_size=200`
@@ -242,27 +280,35 @@ FIT 当前实现已经不再依赖：
 - `adjust=0`
 - `fit_scaler_mode=train_only`
 
-当前脚本已恢复成显式常量写法。
+当前脚本都是显式常量写法，直接改 `.sh` 即可。
 
-如果需要改参数，直接打开对应 `.sh` 修改即可。
+## 当前实验结论对应到架构的解释
 
-## 9. 当前实验判断
+当前最关键的实验结论是：
 
-基于半年的 20 epoch 正式结果：
+- 真实长文本
+- random text
+- filler text
+- `disable_text`
 
-- `direct + scratch` 明显弱
-- `direct + num_ckpt + unfreeze` 已优于 baseline
-- `residual + num_ckpt + freeze` 略优于 baseline
-- `residual + num_ckpt + unfreeze` 当前最好
+这几类结果都非常接近。
 
-因此当前更合理的策略是：
+这说明当前新版 fusion 的主要问题不是“文本 prompt 不够好”，而是：
 
-1. 先把半年任务的 100 epoch 跑完
-2. 再决定是否继续改结构
-3. 再考虑是否把同样改法复制到一年任务
+- 当前结构允许模型几乎完全绕开文本
+- 模型可以只依赖数值侧特征，也拿到几乎一样的结果
 
-## 10. 当前建议阅读顺序
+因此当前结构上的真实问题是：
 
-1. `fit_server_runbook.md`
-2. `fit_refactor_worklog.md`
-3. `global_architecture.md`
+- 文本并没有被强制真正参与预测
+
+## 当前阶段建议
+
+当前这个版本的 half-year FIT 实验已经基本收束。
+
+再继续换更多文本版本，价值已经不高。
+
+更合理的下一步只有两条：
+
+1. 回退旧版 fusion 头，在当前整理后的训练体系下做严格 A/B
+2. 继续重写新版 fusion，让文本必须真正参与预测

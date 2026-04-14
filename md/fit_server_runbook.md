@@ -1,4 +1,4 @@
-﻿﻿﻿# FIT 服务器执行手册
+﻿﻿# FIT 服务器执行手册
 
 最后更新：2026-04-14
 
@@ -6,33 +6,34 @@
 
 当前只聚焦 FIT half-year。
 
-当前排序优先看：
+当前看结果时优先级如下：
 
 1. `MAE`
 2. `MAPE`
 3. `WAPE`
 4. `MSE`
 
-## 当前实验阶段
+## 当前阶段
 
 已经完成：
 
 - 数值 baseline
 - 长文本 20 epoch
 - 长文本 100 epoch
+- 长文本 random text 20 epoch
+- 长文本 filler text 20 epoch
+- `disable_text` 关键对照 20 epoch
 - 结构化完整文本 20 epoch
 - Global Structural View 20 epoch
 - Dynamic Behavior View 20 epoch
 - Event-centric View 20 epoch
 - Semantic Caption View 20 epoch
 
-当前正在跑：
+当前最关键的新增结论来自：
 
-- 暂无
-
-下一轮准备跑：
-
-- 建议先做 `disable_text` 对照
+- random text
+- filler text
+- `disable_text`
 
 ## 当前使用的关键文件
 
@@ -40,25 +41,24 @@
 
 - `./dataset/FIT_DualSG/fit_dualsg_all.json`
 
-### 当前正在跑的文本 PT
-
-- `./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt`
-
-### 下一轮 filler 文本 PT
-
-- `./dataset/FIT_DualSG/pt/fit_dualsg_filler_text.pt`
-
 ### half-year 数值 checkpoint
 
 - `./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth`
 
-### 当前 5 个 half-year 脚本
+### 控制文本 PT
+
+- `./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt`
+- `./dataset/FIT_DualSG/pt/fit_dualsg_filler_text.pt`
+
+### 当前 half-year 核心脚本
 
 - [fit_fusion_halfyear_direct.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct.sh)
 - [fit_fusion_halfyear_direct_freeze.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_freeze.sh)
 - [fit_fusion_halfyear_direct_from_ckpt.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_from_ckpt.sh)
 - [fit_fusion_halfyear_residual.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual.sh)
 - [fit_fusion_halfyear_residual_unfreeze.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_unfreeze.sh)
+- [fit_fusion_halfyear_direct_from_ckpt_disable_text.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_from_ckpt_disable_text.sh)
+- [fit_fusion_halfyear_residual_unfreeze_disable_text.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_unfreeze_disable_text.sh)
 
 ## baseline
 
@@ -86,6 +86,35 @@
 | `residual + ckpt + freeze` | 0.085395 | 0.013151 | 0.114679 | 30.38% | 18.42% |
 | `residual + ckpt + unfreeze` | 0.075699 | 0.010511 | 0.102523 | 27.30% | 16.33% |
 
+## 融合流关闭文本：20 epoch
+
+这两组在当前实现里本质上是同一个实验，因为 `disable_text=True` 后，模型会直接返回数值预测，`text_mode` 不再参与。
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct + ckpt + unfreeze + disable_text` | 0.080148 | 0.011753 | 0.108411 | 28.70% | 17.29% |
+| `residual + ckpt + unfreeze + disable_text` | 0.080148 | 0.011753 | 0.108411 | 28.70% | 17.29% |
+
+## 长文本 random text：20 epoch
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct + ckpt + freeze` | 0.087233 | 0.013407 | 0.115790 | 33.08% | 18.82% |
+| `direct + scratch` | 0.105321 | 0.018585 | 0.136328 | 40.39% | 22.72% |
+| `direct + ckpt + unfreeze` | 0.081796 | 0.011842 | 0.108823 | 30.96% | 17.65% |
+| `residual + ckpt + freeze` | 0.085365 | 0.013130 | 0.114586 | 30.54% | 18.42% |
+| `residual + ckpt + unfreeze` | 0.079736 | 0.011595 | 0.107682 | 28.72% | 17.20% |
+
+## 长文本 filler text：20 epoch
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct + ckpt + freeze` | 0.087151 | 0.013434 | 0.115905 | 33.05% | 18.80% |
+| `direct + scratch` | 0.105571 | 0.018621 | 0.136458 | 40.74% | 22.77% |
+| `direct + ckpt + unfreeze` | 0.081904 | 0.011866 | 0.108930 | 30.96% | 17.67% |
+| `residual + ckpt + freeze` | 0.085345 | 0.013124 | 0.114561 | 30.51% | 18.41% |
+| `residual + ckpt + unfreeze` | 0.079818 | 0.011610 | 0.107749 | 28.81% | 17.22% |
+
 ## 结构化完整文本：20 epoch
 
 | setting | MAE | MSE | RMSE | MAPE | WAPE |
@@ -104,7 +133,7 @@
 | `direct + scratch` | 0.105468 | 0.018596 | 0.136366 | 40.78% | 22.75% |
 | `direct + ckpt + unfreeze` | 0.081979 | 0.011886 | 0.109022 | 30.98% | 17.69% |
 | `residual + ckpt + freeze` | 0.085385 | 0.013118 | 0.114535 | 30.76% | 18.42% |
-| `residual + ckpt + unfreeze` | 0.079282 | 0.011609 | 0.107744 | 28.82% | 17.22% |
+| `residual + ckpt + unfreeze` | 0.079822 | 0.011609 | 0.107744 | 28.82% | 17.22% |
 
 ## Dynamic Behavior View：20 epoch
 
@@ -136,122 +165,93 @@
 | `residual + ckpt + freeze` | 0.085368 | 0.013135 | 0.114607 | 30.39% | 18.42% |
 | `residual + ckpt + unfreeze` | 0.079866 | 0.011611 | 0.107754 | 28.95% | 17.23% |
 
-## 长文本 random text：20 epoch
+## 旧版最好结果
 
-| setting | MAE | MSE | RMSE | MAPE | WAPE |
-|---|---:|---:|---:|---:|---:|
-| `direct + ckpt + freeze` | 0.087233 | 0.013407 | 0.115790 | 33.08% | 18.82% |
-| `direct + scratch` | 0.105321 | 0.018585 | 0.136328 | 40.39% | 22.72% |
-| `direct + ckpt + unfreeze` | 0.081796 | 0.011842 | 0.108823 | 30.96% | 17.65% |
-| `residual + ckpt + freeze` | 0.085365 | 0.013130 | 0.114586 | 30.54% | 18.42% |
-| `residual + ckpt + unfreeze` | 0.079736 | 0.011595 | 0.107682 | 28.72% | 17.20% |
+用户此前最好结果：
 
-## 长文本 filler text：20 epoch
+- `MAE = 0.071344`
+- `MSE = 0.009260`
+- `RMSE = 0.096228`
+- `MAPE = 25.23%`
+- `WAPE = 15.39%`
 
-| setting | MAE | MSE | RMSE | MAPE | WAPE |
-|---|---:|---:|---:|---:|---:|
-| `direct + ckpt + freeze` | 0.087151 | 0.013434 | 0.115905 | 33.05% | 18.80% |
-| `direct + scratch` | 0.105571 | 0.018621 | 0.136458 | 40.74% | 22.77% |
-| `direct + ckpt + unfreeze` | 0.081904 | 0.011866 | 0.108930 | 30.96% | 17.67% |
-| `residual + ckpt + freeze` | 0.085345 | 0.013124 | 0.114561 | 30.51% | 18.41% |
-| `residual + ckpt + unfreeze` | 0.079818 | 0.011610 | 0.107749 | 28.81% | 17.22% |
+当前新版 fusion 还没有追上这一组。
 
-## 当前已确认结论
+## 当前最重要的结论
 
 ### 结论 1
 
-排序非常稳定，几乎所有文本版本都是：
+当前最强路线仍然是：
 
-1. `residual + ckpt + unfreeze`
-2. `direct + ckpt + unfreeze`
-3. `residual + ckpt + freeze`
-4. `direct + ckpt + freeze`
-5. `direct + scratch`
+- `residual + ckpt + unfreeze`
+
+第二强路线是：
+
+- `direct + ckpt + unfreeze`
 
 ### 结论 2
 
-当前真正值得继续看的主路线是：
+`random text`、`filler text` 和真实长文本的结果几乎一样。
 
-- `residual + ckpt + unfreeze`
-- `direct + ckpt + unfreeze`
+这说明当前模型几乎没有利用文本语义本身。
 
 ### 结论 3
 
-两个 freeze 版本更像对照组：
+`disable_text` 结果与当前最好路线非常接近：
 
-- `residual + ckpt + freeze`
-- `direct + ckpt + freeze`
+- `disable_text`
+  - `MAE = 0.080148`
+  - `MAPE = 28.70%`
+- 真实长文本 `residual + ckpt + unfreeze`
+  - `MAE = 0.079863`
+  - `MAPE = 28.83%`
+
+这进一步说明：
+
+- 当前新版 fusion 的主要增益不是来自文本语义
+- 更像来自：
+  - `ckpt + unfreeze` 这个训练 recipe
+  - `residual` 的硬数值 skip
+  - 数值侧辅助特征本身
 
 ### 结论 4
 
-结构化、多视角文本目前都没有带来跨档提升，数值只在小数点后三位附近波动。
+`disable_text=True` 时，`direct` 和 `residual` 两个脚本会得到完全相同的结果，这是当前实现的正常行为，不是 bug。
+
+原因是：
+
+- 模型在 `disable_text=True` 时会直接返回数值预测
+- `text_mode` 不再进入实际计算
 
 ### 结论 5
 
-`structured full text` 和 `Semantic Caption View` 的结果完全一样，后面要检查它们是否实际使用了不同的 `pt`。
+两个 freeze 版本：
 
-### 结论 6
+- `direct + ckpt + freeze`
+- `residual + ckpt + freeze`
 
-当前新版 fusion 仍然明显没有追上旧版最好结果：
+现在都更像对照/消融，不是主路线。
 
-- 旧版最好：
-  - `MAE = 0.071344`
-  - `MSE = 0.009260`
-  - `RMSE = 0.096228`
-  - `MAPE = 25.23%`
-  - `WAPE = 15.39%`
+## 当前问题如何表述
 
-### 结论 7
+当前最准确的问题表述不是：
 
-`random text` 和 `filler text` 与真实长文本结果几乎一致。
+- “文本没设计好，所以效果不涨”
 
-这说明当前模型的提升基本不能归因于文本语义本身。
+而是：
 
-### 结论 8
+- “当前新版 fusion 结构允许模型几乎完全忽略文本，因此即便换成随机文本、无语义模板文本，结果也基本不变”
 
-当前结果更像是：
+换句话说：
 
-- `ckpt + unfreeze` 这一训练 recipe 本身带来了提升
-- `residual` 的硬数值 skip 比 `direct` 更稳
-- 文本内容是否真实、随机、无语义，占比都非常小
+- 现在的瓶颈已经不是“再换一种文本 prompt”
+- 而是“模型结构没有逼迫文本真正参与预测”
 
-## 当前对照实验说明
+## 下一步建议
 
-已经完成两类控制文本：
+当前不建议继续堆更多文本版本。
 
-- random text
-- filler text
+更合理的方向只有两个：
 
-生成脚本：
-
-- [generate_random_text_pt.py](/D:/zhangjing/project/Dualsg_refined/dataset/FIT_DualSG/scripts/generate_random_text_pt.py)
-- [generate_filler_text_pt.py](/D:/zhangjing/project/Dualsg_refined/dataset/FIT_DualSG/scripts/generate_filler_text_pt.py)
-
-说明：
-
-- 两个脚本都基于 `fit_dualsg_all.json`
-- 不需要额外新 json
-- 只生成新的 `pt`
-- 样本数和顺序都与 `fit_dualsg_all.json` 保持一致
-
-## 下一步
-
-当前最高价值、且不需要改模型代码的实验是：
-
-1. `direct + ckpt + unfreeze + disable_text`
-2. `residual + ckpt + unfreeze + disable_text`
-
-对应脚本：
-
-- [fit_fusion_halfyear_direct_from_ckpt_disable_text.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_from_ckpt_disable_text.sh)
-- [fit_fusion_halfyear_residual_unfreeze_disable_text.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_unfreeze_disable_text.sh)
-
-如果这两组结果仍然接近当前最好结果，就可以基本确认：
-
-- 当前新版 fusion 的主要增益来自数值流继续训练和数值辅助纠偏
-- 不是来自文本语义
-
-不建议把 5 组都跑成 `disable_text`，因为：
-
-- `direct/residual + ckpt + freeze + disable_text` 基本只会退化成数值 checkpoint 自身
-- `direct + scratch + disable_text` 更像另一种数值流重训，对定位“文本到底有没有作用”价值不高
+1. 回退并恢复旧版 fusion 头，在当前清理后的训练体系下做严格 A/B
+2. 继续重写新版 fusion，让文本必须真正参与预测，而不是可以被数值侧完全绕开
