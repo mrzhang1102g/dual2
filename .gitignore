@@ -12,6 +12,7 @@ dataset/*.pt
 dataset/**/*.json
 dataset/**/*.jsonl
 dataset/**/*.pt
+dataset/FIT_DualSG/llm_route2_outputs/
 
 # 其他常见忽略项
 __pycache__/
