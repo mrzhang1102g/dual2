@@ -317,3 +317,38 @@ random / filler / 真实长文本 结果几乎一样。
 这说明：
 
 - 即使换回 legacy residual 头，在当前清理后的训练框架里，也还没有坐实“文本语义真正贡献了提升”
+
+## 第二轮 legacy 诊断结果：100 epoch
+
+用户随后补跑了：
+
+- `legacy direct + ckpt + unfreeze`
+- `legacy residual + ckpt + unfreeze`
+
+100 epoch 结果：
+
+- `legacy direct`
+  - `MAE = 0.075869`
+  - `MSE = 0.010493`
+  - `RMSE = 0.102437`
+  - `MAPE = 27.84%`
+  - `WAPE = 16.37%`
+- `legacy residual`
+  - `MAE = 0.076114`
+  - `MSE = 0.010665`
+  - `RMSE = 0.103272`
+  - `MAPE = 27.12%`
+  - `WAPE = 16.42%`
+
+当前解读更新为：
+
+- `legacy 100 epoch` 明显强于 `legacy 20 epoch`
+- `legacy direct` 继续证明旧版显式数值 skip 对 direct 更稳
+- `legacy residual` 在 `MAPE` 上优于 `legacy direct`，这和“residual 更适合作为主方法”的直觉是一致的
+- 但两者和用户最早那组最好结果相比，仍有明显差距
+
+因此：
+
+- 0411 分支已经足够完成“诊断归档”的职责
+- 它说明旧结构里存在有效设计，但也说明历史最好结果不是只靠恢复旧头就能直接找回
+- 后续 0414 分支继续重写新结构是合理且必要的

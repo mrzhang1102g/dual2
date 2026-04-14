@@ -49,6 +49,7 @@
 | modern semantic caption | `./dataset/FIT_DualSG/pt/fit_dualsg_semantic_caption.pt` | 20 | `scripts_archive/fit_halfyear_0411/10_modern_semantic_caption_20/` |
 | disable_text controls | `./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt` | 20 | `scripts_archive/fit_halfyear_0411/11_controls_disable_text_20/` |
 | legacy long text | `./dataset/FIT_DualSG/pt/fit_dualsg_all.pt` | 20 | `scripts_archive/fit_halfyear_0411/12_legacy_long_text_20/` |
+| legacy long text | `./dataset/FIT_DualSG/pt/fit_dualsg_all.pt` | 100 | `scripts_archive/fit_halfyear_0411/13_legacy_long_text_100/` |
 
 ## 每组默认脚本矩阵
 
@@ -65,7 +66,7 @@ disable_text 只保留两条关键对照：
 - `fit_fusion_halfyear_direct_from_ckpt_disable_text.sh`
 - `fit_fusion_halfyear_residual_unfreeze_disable_text.sh`
 
-legacy 只保留两条诊断主线：
+legacy 归档保留两条诊断主线，并分别保存了 20 epoch 和 100 epoch 两组版本：
 
 - `fit_fusion_halfyear_legacy_direct_from_ckpt.sh`
 - `fit_fusion_halfyear_legacy_residual_unfreeze.sh`
@@ -76,7 +77,7 @@ legacy 只保留两条诊断主线：
 
 - current modern 结构已经被 random / filler / disable_text 基本坐实为“可绕开文本”
 - legacy direct 比 modern direct 更稳
-- legacy residual 没有把结果拉回用户最早那组最好结果
+- legacy 100 epoch 明显强于 legacy 20 epoch，但仍没有完全追平用户最早那组最好结果
 - 因此当前 `0411` 更适合作为完整诊断快照保存
 
 下一步新的结构改造，应该在新的分支继续推进，而不是继续污染这份快照。

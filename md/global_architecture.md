@@ -291,3 +291,26 @@ legacy residual 的关键特点是：
 - `legacy residual + ckpt + unfreeze + real long text`
 
 如果 legacy 能明显追回旧版优势，再补 `random / filler` 对照。
+
+## Legacy 100 epoch 诊断更新
+
+用户随后补跑了 `legacy` 的 100 epoch 版本，结果是：
+
+- `legacy direct + ckpt + unfreeze`
+  - `MAE = 0.075869`
+  - `MAPE = 27.84%`
+- `legacy residual + ckpt + unfreeze`
+  - `MAE = 0.076114`
+  - `MAPE = 27.12%`
+
+这说明：
+
+- 旧版 fusion 家族里确实存在更稳的设计成分
+- `legacy direct` 继续证明显式数值 skip 对 direct 很重要
+- `legacy residual` 在 `MAPE` 上更优，也更符合“文本做纠偏”的方法定位
+
+但同时也说明：
+
+- 仅仅恢复旧版 fusion 头，还不足以完全追回用户历史最好结果
+- 因此 `0411` 更适合作为完整诊断与归档分支
+- 后续 `0414` 继续做新结构重写仍然是合理方向

@@ -308,3 +308,33 @@
 - `legacy residual` 与当前 `modern residual` 基本打平
 - 两个 legacy 结果都明显没有追回用户很久之前那组 `MAE=0.071344 / MAPE=25.23%` 的旧版最好结果
 - `legacy residual` 与 `disable_text` 也几乎一样，说明仅恢复旧 residual 头还不能证明文本语义真的重新参与了预测
+
+## Legacy 第二轮：100 epoch
+
+归档脚本目录：
+
+- `scripts_archive/fit_halfyear_0411/13_legacy_long_text_100/`
+
+结果：
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `legacy direct + ckpt + unfreeze` | 0.075869 | 0.010493 | 0.102437 | 27.84% | 16.37% |
+| `legacy residual + ckpt + unfreeze` | 0.076114 | 0.010665 | 0.103272 | 27.12% | 16.42% |
+
+更新后的判断：
+
+- `legacy 100 epoch` 明显强于 `legacy 20 epoch`
+- 相比 0411 的 modern 100 epoch：
+  - `legacy direct` 明显优于 `modern direct`
+  - `legacy residual` 与 `modern residual` 的差距缩小，但 `legacy residual` 在 `MAPE` 上更好
+- 这说明旧版 fusion 家族里确实有更稳的设计成分
+- 但即便如此，它们依然没有完全追平用户最早那组最好结果：
+  - `MAE = 0.071344`
+  - `MAPE = 25.23%`
+
+因此当前最稳妥的结论仍然是：
+
+- 旧头值得保留参考
+- 但“恢复旧头”本身并不足以完全解释或复现历史最好结果
+- 下一阶段继续做结构重写仍然是合理方向
