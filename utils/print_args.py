@@ -1,11 +1,4 @@
-"""
-参数打印工具。
-
-目标：
-- 只打印当前实验排查真正需要的参数
-- FIT / Geo 共用一份逻辑
-- FIT fusion 仅展示 0414 新主线实际使用的参数
-"""
+"""Experiment argument printer."""
 
 
 def print_args(args):
@@ -20,7 +13,10 @@ def print_args(args):
     print(f'  {"Target:":<22}{args.target:<24}{"Freq:":<22}{args.freq:<24}')
     print(f'  {"Scale:":<22}{args.scale:<24}{"Inverse:":<22}{args.inverse:<24}')
     print(f'  {"Train Ratio:":<22}{args.train_ratio:<24}{"Val Ratio:":<22}{args.val_ratio:<24}')
-    print(f'  {"Fit Scaler Mode:":<22}{getattr(args, "fit_scaler_mode", "n/a"):<24}{"Test Ratio:":<22}{args.test_ratio:<24}')
+    print(
+        f'  {"Fit Scaler Mode:":<22}{getattr(args, "fit_scaler_mode", "n/a"):<24}'
+        f'{"Test Ratio:":<22}{args.test_ratio:<24}'
+    )
     print(f'  {"Max Train:":<22}{args.max_train_samples:<24}{"Max Val:":<22}{args.max_val_samples:<24}')
     print(f'  {"Max Test:":<22}{args.max_test_samples:<24}')
     print()
@@ -57,11 +53,18 @@ def print_args(args):
     if args.task_name == "fit_fusion":
         print("\033[1m" + "FIT Fusion 参数" + "\033[0m")
         print(f'  {"Text Mode:":<22}{args.text_mode:<24}{"Caption Emb Path:":<22}{str(args.caption_emb_path):<24}')
-        print(f'  {"Num Model Path:":<22}{args.num_model_path:<24}{"Freeze Numerical:":<22}{args.freeze_numerical:<24}')
-        print(f'  {"Disable Text:":<22}{args.disable_text:<24}{"Opt Mode:":<22}{args.fusion_optimizer_mode:<24}')
+        print(
+            f'  {"Num Model Path:":<22}{args.num_model_path:<24}'
+            f'{"Freeze Numerical:":<22}{args.freeze_numerical:<24}'
+        )
+        print(
+            f'  {"Disable Text:":<22}{args.disable_text:<24}'
+            f'{"Opt Mode:":<22}{args.fusion_optimizer_mode:<24}'
+        )
         print(f'  {"LR Num:":<22}{args.lr_num:<24}{"LR Text:":<22}{args.lr_text:<24}')
         print(f'  {"WD Text:":<22}{args.weight_decay_text:<24}{"Text Hidden:":<22}{args.text_hidden:<24}')
-        print(f'  {"Residual Rank:":<22}{args.residual_rank:<24}{"Num Feat Dim:":<22}{args.num_feat_dim:<24}')
+        print(f'  {"Num Experts:":<22}{getattr(args, "num_experts", "n/a"):<24}{"Num Feat Dim:":<22}{args.num_feat_dim:<24}')
+        print(f'  {"Residual Rank:":<22}{args.residual_rank:<24}')
         print(f'  {"Fusion Hidden:":<22}{args.fusion_hidden:<24}{"Fusion Dropout:":<22}{args.fusion_dropout:<24}')
         print()
 

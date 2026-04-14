@@ -110,6 +110,34 @@ class Exp_Fit_Fusion(Exp_Basic):
             return nn.L1Loss()
         raise ValueError(f"Unsupported loss type: {self.args.loss}")
 
+    def _print_active_optimizer_parameters(self, optimizer):
+        self.log("\n" + "=" * 80)
+        self.log("Active Optimization Parameters")
+        self.log("=" * 80)
+
+        name_map = {id(param): name for name, param in self.model.named_parameters()}
+        seen = set()
+        active_params = 0
+
+        for idx, group in enumerate(optimizer.param_groups):
+            group_name = group.get("group_name", f"group_{idx}")
+            lr = group.get("lr", "n/a")
+            weight_decay = group.get("weight_decay", "n/a")
+            self.log(f"[GROUP] {group_name} | lr={lr} | weight_decay={weight_decay}")
+
+            for param in group["params"]:
+                param_id = id(param)
+                if param_id in seen:
+                    continue
+                seen.add(param_id)
+                active_params += param.numel()
+                name = name_map.get(param_id, "<unnamed>")
+                self.log(f"[ACTIVE] {name:60s} | shape={tuple(param.shape)}")
+
+        self.log("-" * 80)
+        self.log(f"Active params this run: {active_params:,}")
+        self.log("=" * 80 + "\n")
+
     def _prepare_batch(self, batch):
         (
             batch_x,
@@ -201,7 +229,7 @@ class Exp_Fit_Fusion(Exp_Basic):
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
-        self.print_trainable_parameters()
+        self._print_active_optimizer_parameters(model_optim)
 
         for epoch in range(self.args.train_epochs):
             self.model.train()

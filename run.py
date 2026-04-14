@@ -175,6 +175,7 @@ def add_fusion_args(parser):
     parser.add_argument("--fusion_optimizer_mode", type=str, default="unified", choices=["unified", "split"])
 
     parser.add_argument("--text_hidden", type=int, default=128)
+    parser.add_argument("--num_experts", type=int, default=4)
     parser.add_argument("--residual_rank", type=int, default=8)
     parser.add_argument("--num_feat_dim", type=int, default=48)
     parser.add_argument("--fusion_dropout", type=float, default=0.1)

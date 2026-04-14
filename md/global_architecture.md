@@ -112,7 +112,13 @@
 
 ### 总体原则
 
-`0414` 活跃代码只保留一套新主线，不再在运行时保留 `modern / legacy` 切换。
+`0414` 当前已经进入 `v3` 主线。
+
+这里的版本命名约定是：
+
+- `v1`：0411 active 结构
+- `v2`：0414 第一轮重写
+- `v3`：当前正在运行的新 expert-routing 结构
 
 当前 `Model_Fit_Fusion` 只有两个模式：
 
@@ -138,6 +144,7 @@
 - `lr_text`
 - `weight_decay_text`
 - `text_hidden`
+- `num_experts`
 - `residual_rank`
 - `num_feat_dim`
 - `fusion_hidden`
@@ -392,6 +399,65 @@
   - `real > filler > random > disable`
 - 所以下一步重点不应该是继续堆 prompt，而应该是继续改 residual 结构，让文本内容真正决定纠偏策略
 
+### 第四代：0414 v3
+
+第四代就是当前正在运行的 active 结构。
+
+它不是对 v2 的小修小补，而是进一步把“文本参与预测”改成“文本选择预测/纠偏模式”。
+
+#### direct_v3
+
+结构：
+
+- 数值流输出 `y_num`
+- 文本流先输出 4 个候选文本预测
+- 文本路由把 4 个候选混合成 `y_text`
+- 再由逐步 gate 做显式融合：
+  - `y_final = (1 - gate) * y_num + gate * y_text`
+
+和 v2 的区别：
+
+- v2 只有一个 `y_text`
+- v3 让文本侧内部先形成多个候选模式，再做路由
+
+这样做的目标是：
+
+- 保留 v2 direct 已经验证过的稳定性
+- 同时给文本侧更多表达不同预测模式的能力
+
+#### residual_v3
+
+结构：
+
+- 数值流输出 `y_num`
+- 数值侧同时输出 4 个候选纠偏 expert
+- 文本侧输出：
+  - 4 个 expert 的逐步路由权重
+  - 逐步纠偏幅度 `radius`
+- 最终：
+  - `delta_mix = sum_k route_k * delta_k`
+  - `delta = radius * tanh(delta_mix)`
+  - `y_final = y_num + delta`
+
+和 v2 的区别：
+
+- v2 更像“数值 basis + 文本系数”
+- v3 更像“数值候选纠偏模式 + 文本路由选择”
+
+这样做的目标是：
+
+- 继续保持 residual 路径里不存在“纯数值直接输出最终 delta”的旁路
+- 让不同文本更容易触发不同的纠偏模式
+
+#### v3 的工程改动
+
+除了结构变化，v3 还改了日志层：
+
+- `fit_fusion` 不再打印模型总参数量
+- 改成只打印当前 optimizer 里真正会更新的参数
+
+这件事对 direct / residual 特别重要，因为两条路径本来就不该更新同样多的参数。
+
 ## 三代 direct / residual 的本质区别
 
 一句话概括：
@@ -439,11 +505,11 @@
 - 文本必须提供组合系数和幅度控制
 - 从结构上更强调“文本参与纠偏”
 
-## Direct v2
+## Direct v3
 
 ### 设计目标
 
-`direct` 是一条可解释的双流基线。
+`direct_v3` 是一条可解释的双流基线。
 
 它不追求一定强于 residual，但必须满足两点：
 
@@ -459,7 +525,10 @@
 文本流：
 
 - `caption_emb -> text_proj -> text_ctx`
-- `text_ctx -> direct_text_head -> y_text`
+- `text_ctx -> 4 个 direct experts`
+- `route_input = [text_ctx, summary_ctx, y_num_ctx, hist_ctx]`
+- `route = softmax(direct_text_router_head(route_input))`
+- `y_text = sum_k route_k * expert_k`
 
 融合门控：
 
@@ -477,23 +546,23 @@
 
 ### 当前含义
 
-这条路保留了强显式数值 skip。
+这条路保留了强显式数值 skip，并且给文本侧增加了多个候选预测模式。
 
 因此：
 
 - 即使文本流还不够强
-- `direct` 也不会像之前那版 “把 `y_num` 埋进大 MLP” 一样容易失稳
+- `direct_v3` 也不会像第二代那样把 `y_num` 埋进大 MLP 导致失稳
 
-## Residual v2
+## Residual v3
 
 ### 设计目标
 
-`residual` 是当前主方法。
+`residual_v3` 是当前主方法。
 
 它的目标不是“再做一个纯数值纠偏器”，而是：
 
-- 数值侧只生成可供纠偏的 basis
-- 文本侧必须提供 basis 系数和纠偏幅度控制
+- 数值侧只生成多个候选纠偏 expert
+- 文本侧必须提供逐步 expert 路由和纠偏幅度控制
 
 这样能在结构上避免“只靠数值侧就把 delta 直接算出来”的旁路。
 
@@ -510,17 +579,17 @@
 - `y_num`
 - `hist_stats`
 
-数值侧 basis：
+数值侧候选纠偏：
 
 - `basis_input = [encoded_ctx, summary_ctx, y_num_ctx, hist_ctx]`
-- `residual_basis = residual_basis_head(basis_input)`
-- reshape 为 `[B, pred_len, C, R]`
+- `residual_experts = residual_expert_head(basis_input)`
+- reshape 为 `[B, pred_len, C, K]`
 
-文本侧控制：
+文本侧控制与路由：
 
 - `text_ctx = text_proj(caption_emb)`
-- `text_coeff = residual_text_coeff_head(text_ctx)`
-- reshape 为 `[B, pred_len, R]`
+- `route = softmax(residual_text_router_head(text_ctx))`
+- reshape 为 `[B, pred_len, K]`
 
 纠偏幅度：
 
@@ -529,8 +598,8 @@
 
 最终纠偏：
 
-- `delta_raw = sum_k residual_basis[..., k] * text_coeff[..., k]`
-- `delta = radius * tanh(delta_raw)`
+- `delta_mix = sum_k residual_experts[..., k] * route[..., k]`
+- `delta = radius * tanh(delta_mix)`
 - `y_final = y_num + delta`
 
 ### 当前约束
@@ -542,7 +611,7 @@
 也就是说：
 
 - 如果没有文本系数
-- residual basis 不能自己变成最终纠偏量
+- residual experts 不能自己变成最终纠偏量
 
 ## Disable Text
 
@@ -559,10 +628,10 @@
 
 ## 当前脚本入口
 
-当前 0414 活跃的 FIT half-year fusion 脚本只有两个：
+当前 0414 活跃的 FIT half-year fusion 脚本是：
 
-- [fit_fusion_halfyear_direct_v2.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v2.sh)
-- [fit_fusion_halfyear_residual_v2.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v2.sh)
+- [fit_fusion_halfyear_direct_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v3.sh)
+- [fit_fusion_halfyear_residual_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v3.sh)
 
 首轮固定配置：
 
@@ -575,6 +644,7 @@
 - `adjust = 0`
 - `fusion_optimizer_mode = split`
 - `fit_scaler_mode = train_only`
+- `num_experts = 4`
 
 ## 0411 归档和 0414 主线的关系
 
@@ -591,3 +661,8 @@
 - 直接进入一套更干净的新主线
 - 重点不是“换更多 prompt”
 - 而是“从结构上减少文本被绕开的可能性”
+
+当前进一步收紧为：
+
+- 不只是减少文本被绕开
+- 而是尽量让“文本内容不同”也会导致不同的路由和纠偏模式

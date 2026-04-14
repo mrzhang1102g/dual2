@@ -1,10 +1,11 @@
 """
-FIT fusion model for the active 0414 line.
+FIT fusion model for the active 0414 v3 line.
 
 Design goals:
 - Keep the numerical backbone unchanged.
 - Keep an explicit numerical skip in `direct`.
-- Force residual correction to pass through text-controlled coefficients.
+- Use a small set of text-routed correction experts in both direct/residual.
+- Force residual correction to pass through text routing.
 - Keep `disable_text=True` as a strict pure-numerical fallback.
 """
 
@@ -35,18 +36,20 @@ def _to_bool(value, default=False):
 
 class Model_Fit_Fusion(nn.Module):
     """
-    Active FIT fusion model for the 0414 branch.
+    Active FIT fusion model for the 0414 v3 branch.
 
     `direct`
-        Numerical and text streams each produce a forecast.
+        Numerical stream produces `y_num`.
+        Text stream produces several candidate text forecasts.
+        Text-conditioned routing mixes those candidates into `y_text`.
         Final prediction uses an explicit step-wise gate:
         y_final = (1 - gate) * y_num + gate * y_text
 
     `residual`
-        Numerical side only produces residual bases.
-        Text side produces basis coefficients and correction radius.
-        Final correction must pass through text:
-        y_final = y_num + radius * tanh(sum_k basis_k * coeff_k)
+        Numerical side only produces several candidate correction experts.
+        Text side produces routing weights and correction radius.
+        Final correction must pass through text routing:
+        y_final = y_num + radius * tanh(sum_k delta_k * route_k)
     """
 
     def __init__(self, configs, numerical_ckpt_path=None):
@@ -65,7 +68,7 @@ class Model_Fit_Fusion(nn.Module):
         self.disable_text = _to_bool(getattr(configs, "disable_text", False), False)
 
         self.text_hidden = int(getattr(configs, "text_hidden", 128))
-        self.residual_rank = int(getattr(configs, "residual_rank", 8))
+        self.num_experts = int(getattr(configs, "num_experts", getattr(configs, "residual_rank", 4)))
         self.num_feat_dim = int(getattr(configs, "num_feat_dim", max(self.pred_len, 24)))
         self.fusion_hidden = int(getattr(configs, "fusion_hidden", max(self.pred_len * 4, 96)))
         self.fusion_dropout = float(getattr(configs, "fusion_dropout", 0.1))
@@ -80,6 +83,8 @@ class Model_Fit_Fusion(nn.Module):
         self.aux_loss = None
         if self.disable_text:
             self._freeze_non_numerical_parameters()
+        else:
+            self._freeze_inactive_branch_parameters()
 
     def _build_numerical_backbone(self, configs, numerical_ckpt_path):
         numerical_cfg = deepcopy(configs)
@@ -142,12 +147,20 @@ class Model_Fit_Fusion(nn.Module):
         dropout = self.fusion_dropout
         gate_in_dim = self.text_hidden + self.fusion_hidden * 3
 
-        self.direct_text_head = nn.Sequential(
+        self.direct_text_expert_head = nn.Sequential(
             nn.Linear(self.text_hidden, self.fusion_hidden),
             nn.GELU(),
             nn.LayerNorm(self.fusion_hidden),
             nn.Dropout(dropout),
-            nn.Linear(self.fusion_hidden, self.output_dim),
+            nn.Linear(self.fusion_hidden, self.output_dim * self.num_experts),
+        )
+
+        self.direct_text_router_head = nn.Sequential(
+            nn.Linear(gate_in_dim, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.pred_len * self.num_experts),
         )
 
         self.direct_gate_head = nn.Sequential(
@@ -163,21 +176,21 @@ class Model_Fit_Fusion(nn.Module):
         basis_in_dim = self.fusion_hidden * 4
         radius_in_dim = self.text_hidden + self.fusion_hidden
 
-        # Numerical side only builds residual bases, not delta directly.
-        self.residual_basis_head = nn.Sequential(
+        # Numerical side only builds candidate residual experts, not delta directly.
+        self.residual_expert_head = nn.Sequential(
             nn.Linear(basis_in_dim, self.fusion_hidden),
             nn.GELU(),
             nn.LayerNorm(self.fusion_hidden),
             nn.Dropout(dropout),
-            nn.Linear(self.fusion_hidden, self.output_dim * self.residual_rank),
+            nn.Linear(self.fusion_hidden, self.output_dim * self.num_experts),
         )
 
-        self.residual_text_coeff_head = nn.Sequential(
+        self.residual_text_router_head = nn.Sequential(
             nn.Linear(self.text_hidden, self.fusion_hidden),
             nn.GELU(),
             nn.LayerNorm(self.fusion_hidden),
             nn.Dropout(dropout),
-            nn.Linear(self.fusion_hidden, self.pred_len * self.residual_rank),
+            nn.Linear(self.fusion_hidden, self.pred_len * self.num_experts),
         )
 
         self.residual_radius_head = nn.Sequential(
@@ -192,6 +205,23 @@ class Model_Fit_Fusion(nn.Module):
         for name, param in self.named_parameters():
             if not name.startswith("numerical_model"):
                 param.requires_grad = False
+
+    @staticmethod
+    def _freeze_module(module):
+        for param in module.parameters():
+            param.requires_grad = False
+
+    def _freeze_inactive_branch_parameters(self):
+        if self.text_mode == "direct":
+            self._freeze_module(self.encoded_proj)
+            self._freeze_module(self.residual_expert_head)
+            self._freeze_module(self.residual_text_router_head)
+            self._freeze_module(self.residual_radius_head)
+            return
+
+        self._freeze_module(self.direct_text_expert_head)
+        self._freeze_module(self.direct_text_router_head)
+        self._freeze_module(self.direct_gate_head)
 
     def train(self, mode=True):
         super().train(mode)
@@ -295,14 +325,6 @@ class Model_Fit_Fusion(nn.Module):
         y_num = numerical_features["forecast"]
         batch_size = y_num.shape[0]
 
-        y_text = self._reshape_output(
-            self.direct_text_head(text_ctx),
-            batch_size,
-            self.pred_len,
-            self.num_channels,
-            y_num.dtype,
-        )
-
         gate_input = torch.cat(
             [
                 text_ctx,
@@ -312,6 +334,17 @@ class Model_Fit_Fusion(nn.Module):
             ],
             dim=-1,
         )
+        direct_experts = self.direct_text_expert_head(text_ctx).reshape(
+            batch_size,
+            self.pred_len,
+            self.num_channels,
+            self.num_experts,
+        )
+        direct_route = torch.softmax(
+            self.direct_text_router_head(gate_input).reshape(batch_size, self.pred_len, self.num_experts),
+            dim=-1,
+        )
+        y_text = torch.einsum("blck,blk->blc", direct_experts, direct_route.to(dtype=direct_experts.dtype))
         gate = torch.sigmoid(
             self._reshape_output(
                 self.direct_gate_head(gate_input),
@@ -338,19 +371,26 @@ class Model_Fit_Fusion(nn.Module):
             ],
             dim=-1,
         )
-        residual_basis = self.residual_basis_head(basis_input).reshape(
+        residual_experts = self.residual_expert_head(basis_input).reshape(
             batch_size,
             self.pred_len,
             self.num_channels,
-            self.residual_rank,
+            self.num_experts,
         )
 
-        text_coeff = self.residual_text_coeff_head(text_ctx).reshape(
-            batch_size,
-            self.pred_len,
-            self.residual_rank,
+        residual_route = torch.softmax(
+            self.residual_text_router_head(text_ctx).reshape(
+                batch_size,
+                self.pred_len,
+                self.num_experts,
+            ),
+            dim=-1,
         )
-        delta_raw = torch.einsum("blcr,blr->blc", residual_basis, text_coeff.to(dtype=residual_basis.dtype))
+        delta_raw = torch.einsum(
+            "blck,blk->blc",
+            residual_experts,
+            residual_route.to(dtype=residual_experts.dtype),
+        )
 
         radius_input = torch.cat([text_ctx, numerical_contexts["hist_ctx"]], dim=-1)
         radius = torch.sigmoid(

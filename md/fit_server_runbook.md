@@ -164,9 +164,31 @@
    - residual 的硬数值 skip
    - 数值侧辅助特征
 
-## 0414 v2 首轮实验
+## 0414 v2 诊断结果
 
-当前 `0414` 根目录只保留两个 active half-year fusion 脚本：
+`0414 v2` 已经完成首轮和控制实验，当前不再继续把它作为 active 结构往前推。
+
+它承担的作用是：
+
+- 验证第三代结构比 0411 第二代更稳
+- 验证 direct / residual 在 `disable_text / filler / random` 下的行为
+- 判断文本语义是否已经开始真正起作用
+
+对应结果已经在上面完整记录，这里只保留当前结论：
+
+- `direct_v2` 已经是当前最强的 direct 版本
+- `residual_v2` 在 `MAPE` 上更好，但 `MAE / WAPE` 没有压过 `direct_v2`
+- `real / filler / random / disable_text` 的差距仍然太小
+- 因此下一步不是继续拉长训练，而是继续改结构
+
+## 0414 v3 第一轮入口
+
+当前 `0414` 根目录 active half-year fusion 脚本更新为：
+
+- [fit_fusion_halfyear_direct_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v3.sh)
+- [fit_fusion_halfyear_residual_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v3.sh)
+
+上一轮 `v2` 脚本暂时保留在根目录，仅用于结果回看，不作为当前首选入口：
 
 - [fit_fusion_halfyear_direct_v2.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v2.sh)
 - [fit_fusion_halfyear_residual_v2.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v2.sh)
@@ -181,78 +203,31 @@
 - `adjust = 0`
 - `fusion_optimizer_mode = split`
 - `fit_scaler_mode = train_only`
+- `text_hidden = 128`
+- `num_experts = 4`
+- `fit_fusion_halfyear_direct_v3.sh` 使用 `text_mode=direct`
+- `fit_fusion_halfyear_residual_v3.sh` 使用 `text_mode=residual`
 
-结果占位：
+当前 `v3` 设计目标：
 
-| setting | MAE | MSE | RMSE | MAPE | WAPE |
-|---|---:|---:|---:|---:|---:|
-| `direct_v2 + ckpt + unfreeze` | 0.079404 | 0.011418 | 0.106854 | 29.18% | 17.13% |
-| `residual_v2 + ckpt + unfreeze` | 0.079863 | 0.011669 | 0.108021 | 28.60% | 17.23% |
+- `direct_v3`
+  - 继续保留显式数值 skip
+  - 文本侧不再只出一个预测头，而是输出 4 个候选文本预测，再由文本路由混合
+- `residual_v3`
+  - 数值侧输出 4 个候选纠偏 expert
+  - 文本侧输出逐步路由权重和纠偏幅度
+  - 最终纠偏必须经过文本路由，不允许纯数值直接给出最终 `delta`
 
-### 0414 v2 控制实验：20 epoch
+第一轮 `v3` 当前只跑：
 
-#### disable_text
+1. `fit_fusion_halfyear_direct_v3.sh`
+2. `fit_fusion_halfyear_residual_v3.sh`
 
-| setting | MAE | MSE | RMSE | MAPE | WAPE |
-|---|---:|---:|---:|---:|---:|
-| `direct_v2 + ckpt + unfreeze + disable_text` | 0.080189 | 0.011770 | 0.108491 | 28.75% | 17.30% |
-| `residual_v2 + ckpt + unfreeze + disable_text` | 0.080189 | 0.011770 | 0.108491 | 28.75% | 17.30% |
+首轮判据：
 
-#### filler text
-
-| setting | MAE | MSE | RMSE | MAPE | WAPE |
-|---|---:|---:|---:|---:|---:|
-| `direct_v2 + ckpt + unfreeze + filler` | 0.079494 | 0.011439 | 0.106952 | 29.26% | 17.15% |
-| `residual_v2 + ckpt + unfreeze + filler` | 0.079827 | 0.011651 | 0.107941 | 28.72% | 17.22% |
-
-#### random text
-
-| setting | MAE | MSE | RMSE | MAPE | WAPE |
-|---|---:|---:|---:|---:|---:|
-| `direct_v2 + ckpt + unfreeze + random` | 0.079525 | 0.011442 | 0.106967 | 29.33% | 17.16% |
-| `residual_v2 + ckpt + unfreeze + random` | 0.079860 | 0.011664 | 0.108002 | 28.65% | 17.23% |
-
-## 0414 首轮之后的判据
-
-第一轮不急着证明文本语义，只先看两件事：
-
-1. `residual_v2` 是否稳定优于 `direct_v2`
-2. 结构上是否已经具备“文本必须参与预测”的前提
-
-当前第一轮结果说明：
-
-- `direct_v2` 已经是当前最强的 direct 版本，`MAE / WAPE` 都优于现阶段的 `residual_v2`
-- `residual_v2` 在 `MAPE` 上更好，说明它在比例误差层面有一定优势
-- 因此现在不能直接宣称“v2 residual 已经赢过 v2 direct”
-- 但 `residual_v2` 仍然是更适合做文本控制实验的主方法，因为它的结构明确要求文本参与纠偏
-
-当前控制实验结果说明：
-
-- `direct_v2` 的真实文本、filler、random 都非常接近，而且都只比 `disable_text` 略好一点
-- `residual_v2` 的真实文本、filler、random、`disable_text` 几乎完全重合
-
-因此 0414 v2 当前最准确的结论是：
-
-- 第三代结构比第二代更稳，尤其是 `direct_v2`
-- 但文本语义贡献仍然没有被坐实
-- `direct_v2` 更像“加入文本分支后带来轻微辅助增益”，而不是“真实文本语义被显著利用”
-- `residual_v2` 在结构上更合理，但目前还没有把这种结构约束兑现成明显的语义增益
-
-所以下一步优先级调整为：
-
-- 需要继续改结构，而不是先拉 `100 epoch`
-
-如果后续再做第四代结构，重点应该是：
-
-- 不只是“让文本进入公式”
-- 而是让“文本内容不同”必须导致不同纠偏策略
-
-也就是说，下一轮应该重点处理：
-
-- 为什么 `text_coeff` 对 real / filler / random 的区分仍然这么弱
-- 为什么 `direct_v2` 只得到轻微增益，却没有形成清晰的语义排序
-
-如果下一轮结构仍然出现 `real ≈ filler ≈ random`：
-
-- 说明这版 residual 还不够
-- 需要继续改 residual 结构
+- 优先看 `MAE / MAPE / WAPE`
+- 先看 `residual_v3` 是否能稳定接近或超过 `direct_v3`
+- 如果 `residual_v3` 看起来有希望，再补：
+  - `disable_text`
+  - `random`
+  - `filler`
