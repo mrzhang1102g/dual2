@@ -512,3 +512,75 @@ Reason:
   - `residual + ckpt + unfreeze`
 - adding `direct + ckpt + freeze` makes the direct-side comparison more complete
 - `residual + scratch` is still not planned because it is harder to interpret as a correction setup
+
+## 21. 2026-04-13 structured / multi-view 20-epoch results
+
+User finished the added `direct + ckpt + freeze` run and also tested several text PT variants:
+
+- structured full text
+- Global Structural View
+- Dynamic Behavior View
+- Event-centric View
+- Semantic Caption View
+
+Observed stable ranking across all these 20-epoch runs:
+
+1. `residual + ckpt + unfreeze`
+2. `direct + ckpt + unfreeze`
+3. `residual + ckpt + freeze`
+4. `direct + ckpt + freeze`
+5. `direct + scratch`
+
+Representative results:
+
+- structured full text
+  - `direct + ckpt + freeze`: `MAE 0.087139`, `MAPE 33.10%`
+  - `direct + ckpt + unfreeze`: `MAE 0.081992`, `MAPE 30.98%`
+  - `residual + ckpt + freeze`: `MAE 0.085368`, `MAPE 30.39%`
+  - `residual + ckpt + unfreeze`: `MAE 0.079866`, `MAPE 28.95%`
+- global structural view
+  - best = `residual + ckpt + unfreeze`: `MAE 0.079282`, `MAPE 28.82%`
+- dynamic behavior view
+  - best = `residual + ckpt + unfreeze`: `MAE 0.079980`, `MAPE 28.72%`
+- event-centric view
+  - best = `residual + ckpt + unfreeze`: `MAE 0.079809`, `MAPE 28.90%`
+
+Current interpretation:
+
+- these text variants only move the third decimal place in most settings
+- none of them is currently close to the user's old legacy best result
+- `direct + ckpt + freeze` is now confirmed to be a weak control, not a main path
+- `residual + ckpt + freeze` remains a useful ablation but saturates early
+- the main meaningful competition is still:
+  - `residual + ckpt + unfreeze`
+  - `direct + ckpt + unfreeze`
+
+Important note:
+
+- `structured full text` and `Semantic Caption View` appear numerically identical in the user's table
+- if they were intended to use different PT assets, later we should verify whether those PT files are actually different or whether the same path/content was reused by mistake
+
+## 22. 2026-04-14 random / filler PT controls
+
+User decided to add two stronger control baselines against the original long-text setup (`fit_dualsg_all.json`):
+
+- random text
+- filler text
+
+Implemented two new PT-generation scripts:
+
+- `dataset/FIT_DualSG/scripts/generate_random_text_pt.py`
+- `dataset/FIT_DualSG/scripts/generate_filler_text_pt.py`
+
+Design choice:
+
+- no extra json files are required
+- both scripts read `fit_dualsg_all.json` only to preserve sample count and order
+- `random_text.pt` is produced by shuffling the real long-text captions across samples
+- `filler_text.pt` is produced by repeating the same placeholder sentence for all samples
+
+At the same time, the 5 half-year FIT fusion scripts were switched from `structured.pt` to:
+
+- `./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt`
+
+So the next server run is explicitly the random-text control round.

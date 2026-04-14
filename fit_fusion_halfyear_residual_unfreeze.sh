@@ -21,7 +21,7 @@ python run.py \
   --batch_size 200 \
   --patience 100 \
   --num_model_path ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth \
-  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_structured.pt \
+  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt \
   --text_mode residual \
   --fusion_optimizer_mode split \
   --adjust 0 \

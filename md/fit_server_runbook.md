@@ -189,3 +189,160 @@ Why add it:
   - `direct + ckpt + freeze`
   - `direct + ckpt + unfreeze`
 - `residual + scratch` is intentionally not added for now because residual is easier to interpret as a correction model when a strong numerical predictor already exists
+
+## 2026-04-13 structured / multi-view results
+
+Baseline:
+
+- `fit_num_with_meta`
+  - `MAE = 0.085858`
+  - `MAPE = 30.23%`
+  - `WAPE = 18.52%`
+
+### structured full text, 20 epoch
+
+- `direct + ckpt + freeze`
+  - `MAE = 0.087139`
+  - `MAPE = 33.10%`
+  - `WAPE = 18.80%`
+- `direct + scratch`
+  - `MAE = 0.105514`
+  - `MAPE = 40.66%`
+  - `WAPE = 22.76%`
+- `direct + ckpt + unfreeze`
+  - `MAE = 0.081992`
+  - `MAPE = 30.98%`
+  - `WAPE = 17.69%`
+- `residual + ckpt + freeze`
+  - `MAE = 0.085368`
+  - `MAPE = 30.39%`
+  - `WAPE = 18.42%`
+- `residual + ckpt + unfreeze`
+  - `MAE = 0.079866`
+  - `MAPE = 28.95%`
+  - `WAPE = 17.23%`
+
+### global structural view, 20 epoch
+
+- `direct + ckpt + freeze`
+  - `MAE = 0.087178`
+  - `MAPE = 33.00%`
+  - `WAPE = 18.81%`
+- `direct + scratch`
+  - `MAE = 0.105468`
+  - `MAPE = 40.78%`
+  - `WAPE = 22.75%`
+- `direct + ckpt + unfreeze`
+  - `MAE = 0.081979`
+  - `MAPE = 30.98%`
+  - `WAPE = 17.69%`
+- `residual + ckpt + freeze`
+  - `MAE = 0.085385`
+  - `MAPE = 30.76%`
+  - `WAPE = 18.42%`
+- `residual + ckpt + unfreeze`
+  - `MAE = 0.079282`
+  - `MAPE = 28.82%`
+  - `WAPE = 17.22%`
+
+### dynamic behavior view, 20 epoch
+
+- `direct + ckpt + freeze`
+  - `MAE = 0.087238`
+  - `MAPE = 33.46%`
+  - `WAPE = 18.82%`
+- `direct + scratch`
+  - `MAE = 0.105344`
+  - `MAPE = 40.46%`
+  - `WAPE = 22.73%`
+- `direct + ckpt + unfreeze`
+  - `MAE = 0.081835`
+  - `MAPE = 31.09%`
+  - `WAPE = 17.65%`
+- `residual + ckpt + freeze`
+  - `MAE = 0.085409`
+  - `MAPE = 30.31%`
+  - `WAPE = 18.43%`
+- `residual + ckpt + unfreeze`
+  - `MAE = 0.079980`
+  - `MAPE = 28.72%`
+  - `WAPE = 17.25%`
+
+### event-centric view, 20 epoch
+
+- `direct + ckpt + freeze`
+  - `MAE = 0.087092`
+  - `MAPE = 33.24%`
+  - `WAPE = 18.79%`
+- `direct + scratch`
+  - `MAE = 0.105500`
+  - `MAPE = 40.61%`
+  - `WAPE = 22.76%`
+- `direct + ckpt + unfreeze`
+  - `MAE = 0.081763`
+  - `MAPE = 31.14%`
+  - `WAPE = 17.64%`
+- `residual + ckpt + freeze`
+  - `MAE = 0.085376`
+  - `MAPE = 30.64%`
+  - `WAPE = 18.42%`
+- `residual + ckpt + unfreeze`
+  - `MAE = 0.079809`
+  - `MAPE = 28.90%`
+  - `WAPE = 17.22%`
+
+### semantic caption view, 20 epoch
+
+- `direct + ckpt + freeze`
+  - `MAE = 0.087139`
+  - `MAPE = 33.10%`
+  - `WAPE = 18.80%`
+- `direct + scratch`
+  - `MAE = 0.105514`
+  - `MAPE = 40.66%`
+  - `WAPE = 22.76%`
+- `direct + ckpt + unfreeze`
+  - `MAE = 0.081992`
+  - `MAPE = 30.98%`
+  - `WAPE = 17.69%`
+- `residual + ckpt + freeze`
+  - `MAE = 0.085368`
+  - `MAPE = 30.39%`
+  - `WAPE = 18.42%`
+- `residual + ckpt + unfreeze`
+  - `MAE = 0.079866`
+  - `MAPE = 28.95%`
+  - `WAPE = 17.23%`
+
+### current conclusion
+
+- All new 20-epoch text variants stay in the same ranking:
+  - best: `residual + ckpt + unfreeze`
+  - second: `direct + ckpt + unfreeze`
+  - weak ablation: `residual + ckpt + freeze`
+  - weak ablation: `direct + ckpt + freeze`
+  - worst: `direct + scratch`
+- Compared with the 100-epoch long-text run, these new 20-epoch variants do not show a clear improvement trend.
+- `structured full text` and `semantic caption view` are numerically identical in the table above; if they were intended to be different text assets, the corresponding `.pt` files should be checked later.
+
+## 2026-04-14 random / filler controls
+
+Added two direct PT-generation scripts under [dataset/FIT_DualSG/scripts](/D:/zhangjing/project/Dualsg_refined/dataset/FIT_DualSG/scripts):
+
+- [generate_random_text_pt.py](/D:/zhangjing/project/Dualsg_refined/dataset/FIT_DualSG/scripts/generate_random_text_pt.py)
+- [generate_filler_text_pt.py](/D:/zhangjing/project/Dualsg_refined/dataset/FIT_DualSG/scripts/generate_filler_text_pt.py)
+
+Both controls are built against:
+
+- `./dataset/FIT_DualSG/fit_dualsg_all.json`
+
+They do not need new json files:
+
+- `random_text.pt`: shuffle the real long-text captions across samples while keeping sample count and order aligned with `fit_dualsg_all.json`
+- `filler_text.pt`: use the same fixed placeholder sentence for every sample while keeping sample count and order aligned with `fit_dualsg_all.json`
+
+Current half-year fusion scripts are temporarily switched to:
+
+- `./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt`
+
+So the next run is the random-text control round on top of the same `fit_dualsg_all.json` numerical data.

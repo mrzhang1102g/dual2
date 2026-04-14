@@ -26,7 +26,7 @@ python run.py \
   --batch_size 200 \
   --patience 100 \
   --num_model_path "" \
-  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_structured.pt \
+  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt \
   --text_mode direct \
   --fusion_optimizer_mode split \
   --adjust 0 \
