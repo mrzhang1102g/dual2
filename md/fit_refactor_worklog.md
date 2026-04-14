@@ -252,3 +252,68 @@ random / filler / 真实长文本 结果几乎一样。
 
 - 说明旧版最好结果未必只来自旧头
 - 下一轮应直接进入“强制使用文本”的结构重写，而不是继续换文本 prompt
+
+## 0411 快照归档
+
+为了避免后续 0414 分支继续重写结构时污染这一轮诊断结果，当前已经把本阶段 half-year 脚本快照单独归档到：
+
+- `scripts_archive/fit_halfyear_0411/`
+
+归档内容包括：
+
+- baseline 脚本
+- modern 长文本 20 / 100 epoch
+- modern random / filler 对照
+- modern 结构化与多视角文本
+- disable_text 对照
+- legacy long text 诊断
+
+对应总清单文档：
+
+- [fit_halfyear_0411_manifest.md](/D:/zhangjing/project/Dualsg_refined/md/fit_halfyear_0411_manifest.md)
+
+这样后续即使根目录活跃脚本继续演化，这一轮 0411 阶段的 `.sh` 配置也还能完整追溯和复现。
+
+## 第一轮 legacy 诊断结果
+
+首轮只跑了：
+
+- `legacy direct + ckpt + unfreeze + real long text`
+- `legacy residual + ckpt + unfreeze + real long text`
+
+结果：
+
+- `legacy direct`
+  - `MAE = 0.080265`
+  - `MSE = 0.011629`
+  - `RMSE = 0.107840`
+  - `MAPE = 29.75%`
+  - `WAPE = 17.32%`
+- `legacy residual`
+  - `MAE = 0.080123`
+  - `MSE = 0.011747`
+  - `RMSE = 0.108384`
+  - `MAPE = 28.68%`
+  - `WAPE = 17.28%`
+
+当前解读：
+
+- `legacy direct` 明显优于 `modern direct` 的同 recipe 结果，说明旧版显式 `y_num` skip 对 direct 确实更稳
+- `legacy residual` 与 `modern residual` 基本打平，说明只恢复旧 residual 头本身，并没有把性能拉回用户很久之前的旧最好结果
+- 两个 legacy 结果都明显落后于那组旧版最好结果：
+  - `MAE = 0.071344`
+  - `MAPE = 25.23%`
+
+这意味着：
+
+- “恢复旧头”本身不够
+- 旧版最好结果未必只来自旧 fusion 头
+- 还可能混有当时旧的数据预处理语义、训练设定，甚至旧流程里的其他非当前因素
+
+另外一个重要结论：
+
+- `legacy residual` 与 `disable_text` 几乎一样
+
+这说明：
+
+- 即使换回 legacy residual 头，在当前清理后的训练框架里，也还没有坐实“文本语义真正贡献了提升”

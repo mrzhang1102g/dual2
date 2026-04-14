@@ -2,6 +2,15 @@
 
 最后更新：2026-04-14
 
+配套文档：
+
+- [fit_halfyear_0411_manifest.md](/D:/zhangjing/project/Dualsg_refined/md/fit_halfyear_0411_manifest.md)
+  0411 阶段脚本归档、PT 路径、实验分组总清单
+- [fit_refactor_worklog.md](/D:/zhangjing/project/Dualsg_refined/md/fit_refactor_worklog.md)
+  当前诊断结论与 legacy 恢复工作记录
+- [global_architecture.md](/D:/zhangjing/project/Dualsg_refined/md/global_architecture.md)
+  当前 FIT 代码结构与 `modern/legacy` 融合实现
+
 ## 当前重点
 
 当前只聚焦 FIT half-year。
@@ -290,5 +299,12 @@
 
 | setting | MAE | MSE | RMSE | MAPE | WAPE |
 |---|---:|---:|---:|---:|---:|
-| `legacy direct + ckpt + unfreeze` | pending | pending | pending | pending | pending |
-| `legacy residual + ckpt + unfreeze` | pending | pending | pending | pending | pending |
+| `legacy direct + ckpt + unfreeze` | 0.080265 | 0.011629 | 0.107840 | 29.75% | 17.32% |
+| `legacy residual + ckpt + unfreeze` | 0.080123 | 0.011747 | 0.108384 | 28.68% | 17.28% |
+
+当前第一轮 legacy 诊断结论：
+
+- `legacy direct` 明显优于当前 `modern direct` 的同 recipe 结果
+- `legacy residual` 与当前 `modern residual` 基本打平
+- 两个 legacy 结果都明显没有追回用户很久之前那组 `MAE=0.071344 / MAPE=25.23%` 的旧版最好结果
+- `legacy residual` 与 `disable_text` 也几乎一样，说明仅恢复旧 residual 头还不能证明文本语义真的重新参与了预测

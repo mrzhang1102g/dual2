@@ -8,6 +8,8 @@
 
 配套文档：
 
+- [fit_halfyear_0411_manifest.md](/D:/zhangjing/project/Dualsg_refined/md/fit_halfyear_0411_manifest.md)
+  0411 阶段 half-year 脚本快照与实验分组总表
 - [fit_server_runbook.md](/D:/zhangjing/project/Dualsg_refined/md/fit_server_runbook.md)
   当前实验结果、服务器执行记录、legacy 诊断脚本
 - [fit_refactor_worklog.md](/D:/zhangjing/project/Dualsg_refined/md/fit_refactor_worklog.md)
