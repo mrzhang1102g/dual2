@@ -1,6 +1,6 @@
 ﻿# FIT 架构文档
 
-最后更新：2026-04-14
+最后更新：2026-04-16
 
 ## 文档定位
 
@@ -118,7 +118,8 @@
 
 - `v1`：0411 active 结构
 - `v2`：0414 第一轮重写
-- `v3`：当前正在运行的新 expert-routing 结构
+- `v3`：0414 第二轮，4 expert routing 结构
+- `v4`：0414 当前 active，DualSG 启发的趋势级 residual 纠偏
 
 当前 `Model_Fit_Fusion` 只有两个模式：
 
@@ -145,6 +146,8 @@
 - `weight_decay_text`
 - `text_hidden`
 - `num_experts`
+- `residual_style`
+- `trend_segments`
 - `residual_rank`
 - `num_feat_dim`
 - `fusion_hidden`
@@ -458,7 +461,37 @@
 
 这件事对 direct / residual 特别重要，因为两条路径本来就不该更新同样多的参数。
 
-## 三代 direct / residual 的本质区别
+#### v3 当前实验信号
+
+目前 half-year 第一轮结果：
+
+- `direct_v3 + ckpt + unfreeze`
+  - `MAE = 0.079424`
+  - `MAPE = 29.03%`
+  - `WAPE = 17.13%`
+- `residual_v3 + ckpt + unfreeze`
+  - `MAE = 0.079695`
+  - `MAPE = 28.79%`
+  - `WAPE = 17.19%`
+
+这说明：
+
+- `direct_v3` 基本延续了 `direct_v2` 的稳定性
+- `residual_v3` 相比 `v2 residual`，在 `MAE / WAPE` 上有小幅进步
+- 但 `residual_v3` 目前仍没有整体压过 `direct_v3`
+
+因此第四代当前的最准确判断是：
+
+- 4 个候选 expert 的路由设计带来了有限增量
+- 但还不足以证明“文本内容差异已经明显影响了纠偏策略”
+
+所以第四代没有继续沿着 `v3` 去补完整控制实验，而是进入 `v4 residual`：
+
+- 保留 `direct_v3` 作为稳定基线
+- 只重写 residual
+- 让文本只做 forecast-space 的趋势级纠偏
+
+## 四代 direct / residual 的本质区别
 
 一句话概括：
 
@@ -468,7 +501,7 @@
 
 如果拆成 direct / residual 两条线看：
 
-### direct 的三代变化
+### direct 的四代变化
 
 第一代：
 
@@ -487,7 +520,13 @@
 - 把显式 skip 加回来
 - 同时把融合权重升级成 step-wise dynamic gate
 
-### residual 的三代变化
+第四代：
+
+- 继续沿用第三代 `direct_v3`
+- 不再继续复杂化 direct
+- 让 direct 维持稳定、可解释的双流基线角色
+
+### residual 的四代变化
 
 第一代：
 
@@ -504,6 +543,13 @@
 - 数值只提供 basis
 - 文本必须提供组合系数和幅度控制
 - 从结构上更强调“文本参与纠偏”
+
+第四代：
+
+- 不再做高频 routing residual
+- 文本先读取数值趋势上下文
+- 然后只输出低频、分段常数的趋势纠偏
+- 把文本作用收缩到它最擅长的方向、强度和阶段变化
 
 ## Direct v3
 
@@ -613,6 +659,93 @@
 - 如果没有文本系数
 - residual experts 不能自己变成最终纠偏量
 
+## Residual v4
+
+### 设计目标
+
+`residual_v4` 的目标不是继续增加 residual 路由复杂度，而是借鉴 DualSG，把文本流收缩成一个**趋势级 forecast-space correction**。
+
+核心原则：
+
+1. 数值流继续负责主预测和高频细节
+2. 文本流不再尝试控制完整高频 `delta`
+3. 文本先读取当前数值趋势上下文，再输出低频趋势纠偏
+
+### 结构
+
+主预测：
+
+- 数值 backbone 输出 `y_num`
+
+数值趋势上下文：
+
+- `encoded_ctx`
+- `summary_ctx`
+- `y_num_ctx`
+- `hist_ctx`
+
+先拼成：
+
+- `trend_input = [encoded_ctx, summary_ctx, y_num_ctx, hist_ctx]`
+
+然后：
+
+- `num_trend_ctx = residual_v4_num_trend_proj(trend_input)`
+
+文本侧：
+
+- `caption_emb -> text_proj -> text_ctx`
+
+文本先调制数值趋势上下文：
+
+- `gamma = tanh(text_gamma(text_ctx))`
+- `beta = text_beta(text_ctx)`
+- `aligned_trend_ctx = LN(num_trend_ctx * (1 + gamma) + beta)`
+
+然后基于：
+
+- `aligned_trend_ctx`
+- `text_ctx`
+- `hist_ctx`
+
+共同预测：
+
+- `delta_segments`
+- `segment_gate`
+
+最终：
+
+- `delta_segments = segment_gate * tanh(delta_segments)`
+- `delta = piecewise_constant_expand(delta_segments)`
+- `y_final = y_num + delta`
+
+### 与 v3 的关键差异
+
+`v3 residual`：
+
+- 更像“文本给若干 expert 做路由”
+
+`v4 residual`：
+
+- 更像“文本先理解当前数值趋势，再给低频趋势修正”
+
+也就是说：
+
+- `v3` 仍然有较强的模式选择味道
+- `v4` 则直接把文本职责收缩成趋势语义纠偏
+
+### 当前 active 脚本
+
+当前 half-year active fusion 入口：
+
+- [fit_fusion_halfyear_direct_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v3.sh)
+- [fit_fusion_halfyear_residual_v4.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v4.sh)
+
+其中：
+
+- `direct_v3` 是稳定基线
+- `residual_v4` 是当前 residual 主方法
+
 ## Disable Text
 
 参数：
@@ -666,3 +799,4 @@
 
 - 不只是减少文本被绕开
 - 而是尽量让“文本内容不同”也会导致不同的路由和纠偏模式
+

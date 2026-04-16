@@ -63,7 +63,14 @@ def print_args(args):
         )
         print(f'  {"LR Num:":<22}{args.lr_num:<24}{"LR Text:":<22}{args.lr_text:<24}')
         print(f'  {"WD Text:":<22}{args.weight_decay_text:<24}{"Text Hidden:":<22}{args.text_hidden:<24}')
-        print(f'  {"Num Experts:":<22}{getattr(args, "num_experts", "n/a"):<24}{"Num Feat Dim:":<22}{args.num_feat_dim:<24}')
+        print(
+            f'  {"Num Experts:":<22}{getattr(args, "num_experts", "n/a"):<24}'
+            f'{"Residual Style:":<22}{getattr(args, "residual_style", "n/a"):<24}'
+        )
+        print(
+            f'  {"Trend Segments:":<22}{getattr(args, "trend_segments", "n/a"):<24}'
+            f'{"Num Feat Dim:":<22}{args.num_feat_dim:<24}'
+        )
         print(f'  {"Residual Rank:":<22}{args.residual_rank:<24}')
         print(f'  {"Fusion Hidden:":<22}{args.fusion_hidden:<24}{"Fusion Dropout:":<22}{args.fusion_dropout:<24}')
         print()

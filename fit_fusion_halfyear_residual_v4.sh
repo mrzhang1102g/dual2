@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# FIT half-year fusion v3: residual + load numerical checkpoint + unfreeze
+# FIT half-year fusion v4: residual + load numerical checkpoint + unfreeze
 source /data1/miniconda3/bin/activate dualsg2
 
 python run.py \
   --task_name fit_fusion \
   --is_training 1 \
-  --model_id fit_fusion_halfyear_residual_v3 \
+  --model_id fit_fusion_halfyear_residual_v4 \
   --model Model_Fit_Fusion \
   --data FIT_Fusion \
   --root_path ./dataset/ \
@@ -23,7 +23,8 @@ python run.py \
   --num_model_path ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth \
   --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt \
   --text_mode residual \
-  --residual_style v3 \
+  --residual_style v4 \
+  --trend_segments 4 \
   --fusion_optimizer_mode split \
   --adjust 0 \
   --lr_num 0.0001 \

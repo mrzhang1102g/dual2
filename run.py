@@ -176,6 +176,8 @@ def add_fusion_args(parser):
 
     parser.add_argument("--text_hidden", type=int, default=128)
     parser.add_argument("--num_experts", type=int, default=4)
+    parser.add_argument("--residual_style", type=str, default="v4", choices=["v3", "v4"])
+    parser.add_argument("--trend_segments", type=int, default=4)
     parser.add_argument("--residual_rank", type=int, default=8)
     parser.add_argument("--num_feat_dim", type=int, default=48)
     parser.add_argument("--fusion_dropout", type=float, default=0.1)

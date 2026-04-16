@@ -1,6 +1,6 @@
 ﻿# FIT 服务器执行手册
 
-最后更新：2026-04-14
+最后更新：2026-04-16
 
 ## 文档定位
 
@@ -181,14 +181,14 @@
 - `real / filler / random / disable_text` 的差距仍然太小
 - 因此下一步不是继续拉长训练，而是继续改结构
 
-## 0414 v3 第一轮入口
+## 0414 v3 结果回顾
 
-当前 `0414` 根目录 active half-year fusion 脚本更新为：
+`v3` 阶段 active half-year fusion 脚本是：
 
 - [fit_fusion_halfyear_direct_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v3.sh)
 - [fit_fusion_halfyear_residual_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v3.sh)
 
-上一轮 `v2` 脚本暂时保留在根目录，仅用于结果回看，不作为当前首选入口：
+上一轮 `v2` 脚本仍保留在根目录，仅用于结果回看：
 
 - [fit_fusion_halfyear_direct_v2.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v2.sh)
 - [fit_fusion_halfyear_residual_v2.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v2.sh)
@@ -208,7 +208,7 @@
 - `fit_fusion_halfyear_direct_v3.sh` 使用 `text_mode=direct`
 - `fit_fusion_halfyear_residual_v3.sh` 使用 `text_mode=residual`
 
-当前 `v3` 设计目标：
+`v3` 设计目标：
 
 - `direct_v3`
   - 继续保留显式数值 skip
@@ -218,16 +218,60 @@
   - 文本侧输出逐步路由权重和纠偏幅度
   - 最终纠偏必须经过文本路由，不允许纯数值直接给出最终 `delta`
 
-第一轮 `v3` 当前只跑：
+第一轮 `v3` 已完成：
 
 1. `fit_fusion_halfyear_direct_v3.sh`
 2. `fit_fusion_halfyear_residual_v3.sh`
 
-首轮判据：
+当前结果：
 
-- 优先看 `MAE / MAPE / WAPE`
-- 先看 `residual_v3` 是否能稳定接近或超过 `direct_v3`
-- 如果 `residual_v3` 看起来有希望，再补：
-  - `disable_text`
-  - `random`
-  - `filler`
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct_v3 + ckpt + unfreeze` | 0.079424 | 0.011435 | 0.106934 | 29.03% | 17.13% |
+| `residual_v3 + ckpt + unfreeze` | 0.079695 | 0.011593 | 0.107672 | 28.79% | 17.19% |
+
+当前解读：
+
+- `direct_v3` 和 `v2 direct` 基本持平，`MAE / WAPE` 仍然是当前 direct 路线里最稳的一档
+- `residual_v3` 相比 `v2 residual`，在 `MAE / WAPE` 上有小幅改善，但 `MAPE` 没有压过 `v2 residual`
+- 也就是说，4 个候选 expert 的 routing 让 residual 路线有一点进步，但进步还不够大
+- 当前仍然不能直接说 `residual_v3` 已经赢过 `direct_v3`
+- `v3` 的信息增量已经足够，不再继续补完整控制实验
+
+## 0414 v4 第一轮入口
+
+当前 `0414` 根目录 active half-year fusion 脚本更新为：
+
+- [fit_fusion_halfyear_direct_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v3.sh)
+- [fit_fusion_halfyear_residual_v4.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v4.sh)
+
+固定配置：
+
+- `real long text = ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt`
+- `num_model_path = ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth`
+- `unfreeze numerical`
+- `train_epochs = 20`
+- `patience = 100`
+- `adjust = 0`
+- `fusion_optimizer_mode = split`
+- `fit_scaler_mode = train_only`
+- `text_hidden = 128`
+- `num_experts = 4`
+- `trend_segments = 4`
+
+`v4` 设计目标：
+
+- `direct_v3`
+  - 继续作为稳定 direct 基线
+- `residual_v4`
+  - 借鉴 DualSG，不再做高频 expert routing residual
+  - 改成趋势级、分段常数的 forecast-space correction
+  - 文本先读取数值趋势上下文，再输出低频纠偏
+
+当前结果先留空，待服务器首轮返回后再补：
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct_v3 + ckpt + unfreeze` | pending | pending | pending | pending | pending |
+| `residual_v4 + ckpt + unfreeze` | pending | pending | pending | pending | pending |
+

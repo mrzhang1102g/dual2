@@ -1,6 +1,6 @@
 ﻿# FIT 重构工作记录
 
-最后更新：2026-04-14
+最后更新：2026-04-16
 
 ## 0411 阶段回顾
 
@@ -387,3 +387,111 @@
 
 1. `residual_v3` 能不能重新成为明显强于 `direct_v3` 的主方法
 2. 4 个候选 expert 的路由机制，能不能让文本控制实验开始出现差异
+
+## 0414 v3 第一轮结果
+
+用户已经完成：
+
+- `fit_fusion_halfyear_direct_v3.sh`
+- `fit_fusion_halfyear_residual_v3.sh`
+
+结果：
+
+- `direct_v3 + ckpt + unfreeze`
+  - `MAE = 0.079424`
+  - `MSE = 0.011435`
+  - `RMSE = 0.106934`
+  - `MAPE = 29.03%`
+  - `WAPE = 17.13%`
+- `residual_v3 + ckpt + unfreeze`
+  - `MAE = 0.079695`
+  - `MSE = 0.011593`
+  - `RMSE = 0.107672`
+  - `MAPE = 28.79%`
+  - `WAPE = 17.19%`
+
+当前解读：
+
+- `direct_v3` 和 `direct_v2` 基本持平
+- 说明 direct 这条线已经比较稳定，短期内不太像是主要瓶颈
+- `residual_v3` 相比 `residual_v2`，在 `MAE / WAPE` 上有小幅改善
+- 但它还没有在整体上压过 `direct_v3`
+- 也就是说，“4 个候选 expert + 文本路由”方向是有一点增量的，但还没有强到足以扭转主结论
+
+所以当前最合理的下一步不是：
+
+- 立刻把 `v3` 拉到 `100 epoch`
+- 继续把 `v3` 的 `disable_text / random / filler` 全补齐
+
+原因很直接：
+
+- `v3` 的增量仍然接近“关闭文本后继续训练数值流”量级
+- 再补完整控制实验的信息增量已经不高
+
+## 为什么进入 0414 v4
+
+进入 `v4` 的直接原因有三点：
+
+1. `v3` 仍然没有坐实文本语义贡献
+2. 多 expert routing 更像“文本给若干候选模式分配权重”
+3. DualSG 给出的启发更明确：
+   - 不再执着于 latent alignment
+   - 直接在预测空间做趋势级语义纠偏
+
+因此 `v4` 的方向不是继续加大 expert 数量，而是：
+
+- 保留 `direct_v3` 当基线
+- 只重写 residual
+- 把 residual 收缩成趋势级、分段常数的 forecast-space correction
+
+## 0414 v4 的设计目标
+
+`residual_v4` 的目标：
+
+- 数值流继续负责主预测和高频细节
+- 文本流不碰任意高频 `delta`
+- 文本先读取当前数值趋势上下文
+- 然后只输出低频 `delta_segments`
+
+这版与 `v3` 的区别非常明确：
+
+- `v3`：文本更像在选 expert
+- `v4`：文本更像在输出趋势修正
+
+换句话说，`v4` 不再试图让文本变成“复杂纠偏控制器”，而是让文本只做它更擅长的：
+
+- 方向
+- 强度
+- 分段变化
+
+## 0414 v4 当前落地
+
+当前已完成代码改动：
+
+- `run.py`
+  - 新增 `residual_style`
+  - 新增 `trend_segments`
+- `models/model_fit_fusion.py`
+  - 保留 `direct_v3`
+  - 保留 `residual_v3` 以便回看
+  - 新增 `residual_v4`
+- `fit_fusion_halfyear_residual_v3.sh`
+  - 显式写入 `--residual_style v3`
+- 新增：
+  - `fit_fusion_halfyear_residual_v4.sh`
+
+当前 active 入口切到：
+
+- `fit_fusion_halfyear_direct_v3.sh`
+- `fit_fusion_halfyear_residual_v4.sh`
+
+下一步就是跑这两组 first round，然后再判断：
+
+- `residual_v4` 是否开始显著优于 `direct_v3`
+- 是否值得再补 `disable_text / random / filler`
+
+如果这三组仍然几乎重合：
+
+- 说明 `v3` 还不够
+- 问题就不只是“有没有多个候选 expert”，而是“文本路由是否真的足够依赖文本内容”
+
