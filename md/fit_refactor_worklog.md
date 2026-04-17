@@ -1,6 +1,6 @@
-﻿# FIT 重构工作记录
+﻿﻿# FIT 重构工作记录
 
-最后更新：2026-04-16
+最后更新：2026-04-17
 
 ## 0411 阶段回顾
 
@@ -490,8 +490,72 @@
 - `residual_v4` 是否开始显著优于 `direct_v3`
 - 是否值得再补 `disable_text / random / filler`
 
-如果这三组仍然几乎重合：
+## 0414 v4 第一轮结果
 
-- 说明 `v3` 还不够
-- 问题就不只是“有没有多个候选 expert”，而是“文本路由是否真的足够依赖文本内容”
+用户已经完成：
+
+- `fit_fusion_halfyear_residual_v4.sh`
+
+结果：
+
+- `residual_v4 + ckpt + unfreeze`
+  - `MAE = 0.079641`
+  - `MSE = 0.011568`
+  - `RMSE = 0.107555`
+  - `MAPE = 28.56%`
+  - `WAPE = 17.18%`
+
+结合当前 `direct_v3` 基线：
+
+- `direct_v3 + ckpt + unfreeze`
+  - `MAE = 0.079424`
+  - `MAPE = 29.03%`
+  - `WAPE = 17.13%`
+
+当前解读：
+
+- `residual_v4` 相比 `residual_v3` 仍然有小幅进步
+- 说明“趋势级、分段常数 forecast-space correction”方向是合理的
+- 但它还没有在 `MAE / WAPE` 上压过 `direct_v3`
+- 因此 `v4` 目前的状态是：
+  - residual 方向继续在变好
+  - 但还没有达到“主方法已经明显强于 direct 基线”的程度
+
+## 为什么继续做 0414 v5
+
+进入 `v5` 的原因是：
+
+1. `v4` 的趋势级纠偏方向是对的
+2. 但 `v4` 仍然更像“文本调制一个全局趋势上下文”，绑定还不够强
+3. 下一步需要让文本在**具体的数值 patch / segment 状态**下决定纠偏
+
+因此 `v5` 的核心变化不是再增加更多 expert，而是：
+
+- 文本带着分段 query 去读数值 patch memory
+- 先形成 text-aligned segment context
+- 再基于这个 segment context 生成低频分段纠偏
+
+## 0414 v5 当前落地
+
+当前已完成代码改动：
+
+- `run.py`
+  - `residual_style` 默认切到 `v5`
+- `models/model_fit_fusion.py`
+  - 保留 `residual_v3`
+  - 保留 `residual_v4`
+  - 新增 `residual_v5`
+- 新增：
+  - `fit_fusion_halfyear_residual_v5.sh`
+
+当前 active 入口切到：
+
+- `fit_fusion_halfyear_direct_v3.sh`
+- `fit_fusion_halfyear_residual_v5.sh`
+
+下一步就是跑这两组 first round，然后再判断：
+
+- `residual_v5` 是否能在 `MAE / WAPE` 上开始接近或超过 `direct_v3`
+- 是否值得再补 `disable_text / random / filler`
+
 

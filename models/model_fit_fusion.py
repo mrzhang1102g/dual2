@@ -5,8 +5,8 @@ Design goals:
 - Keep the numerical backbone unchanged.
 - Keep an explicit numerical skip in `direct`.
 - Keep `direct_v3` as the stable baseline.
-- Support both `residual_v3` and `residual_v4` for comparison.
-- Make `residual_v4` operate as a trend-level, piecewise-constant correction.
+- Support `residual_v3`, `residual_v4`, and `residual_v5` for comparison.
+- Keep `residual_v4/v5` as trend-level, piecewise-constant corrections.
 - Keep `disable_text=True` as a strict pure-numerical fallback.
 """
 
@@ -55,6 +55,11 @@ class Model_Fit_Fusion(nn.Module):
         `residual_v4`
             Text first reads numerical trend context, then emits a low-frequency
             piecewise-constant correction in forecast space.
+
+        `residual_v5`
+            Text uses segment queries to attend numerical patch memory, then
+            predicts piecewise-constant corrections from text-aligned segment
+            contexts. This is a stronger trend-routing variant of `v4`.
     """
 
     def __init__(self, configs, numerical_ckpt_path=None):
@@ -74,8 +79,8 @@ class Model_Fit_Fusion(nn.Module):
 
         self.text_hidden = int(getattr(configs, "text_hidden", 128))
         self.num_experts = int(getattr(configs, "num_experts", getattr(configs, "residual_rank", 4)))
-        self.residual_style = getattr(configs, "residual_style", "v4")
-        if self.residual_style not in {"v3", "v4"}:
+        self.residual_style = getattr(configs, "residual_style", "v5")
+        if self.residual_style not in {"v3", "v4", "v5"}:
             raise ValueError(f"[Fit-Fusion] Unsupported residual_style: {self.residual_style}")
         self.trend_segments = int(getattr(configs, "trend_segments", 4))
         self.num_feat_dim = int(getattr(configs, "num_feat_dim", max(self.pred_len, 24)))
@@ -238,6 +243,39 @@ class Model_Fit_Fusion(nn.Module):
             nn.Linear(self.fusion_hidden, self.trend_segments * self.num_channels),
         )
 
+        # residual_v5: text-aligned segment queries attend numerical patch memory.
+        self.residual_v5_trend_memory_proj = nn.Linear(self.backbone_dim, self.fusion_hidden)
+        self.residual_v5_key_proj = nn.Linear(self.fusion_hidden, self.fusion_hidden)
+        self.residual_v5_value_proj = nn.Linear(self.fusion_hidden, self.fusion_hidden)
+        self.residual_v5_text_query_proj = nn.Linear(self.text_hidden, self.fusion_hidden)
+        self.residual_v5_segment_queries = nn.Parameter(
+            torch.randn(self.trend_segments, self.fusion_hidden) * 0.02
+        )
+        self.residual_v5_segment_norm = nn.LayerNorm(self.fusion_hidden)
+
+        v5_basis_in_dim = self.fusion_hidden * 3
+        self.residual_v5_basis_head = nn.Sequential(
+            nn.Linear(v5_basis_in_dim, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.num_channels * self.num_experts),
+        )
+        self.residual_v5_coeff_head = nn.Sequential(
+            nn.Linear(self.text_hidden + self.fusion_hidden, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.num_experts),
+        )
+        self.residual_v5_radius_head = nn.Sequential(
+            nn.Linear(self.text_hidden + self.fusion_hidden * 2, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.num_channels),
+        )
+
     def _freeze_non_numerical_parameters(self):
         for name, param in self.named_parameters():
             if not name.startswith("numerical_model"):
@@ -260,6 +298,15 @@ class Model_Fit_Fusion(nn.Module):
             self._freeze_module(self.residual_v4_trend_norm)
             self._freeze_module(self.residual_v4_segment_head)
             self._freeze_module(self.residual_v4_segment_gate_head)
+            self._freeze_module(self.residual_v5_trend_memory_proj)
+            self._freeze_module(self.residual_v5_key_proj)
+            self._freeze_module(self.residual_v5_value_proj)
+            self._freeze_module(self.residual_v5_text_query_proj)
+            self._freeze_module(self.residual_v5_segment_norm)
+            self._freeze_module(self.residual_v5_basis_head)
+            self._freeze_module(self.residual_v5_coeff_head)
+            self._freeze_module(self.residual_v5_radius_head)
+            self.residual_v5_segment_queries.requires_grad = False
             return
 
         self._freeze_module(self.direct_text_expert_head)
@@ -272,11 +319,38 @@ class Model_Fit_Fusion(nn.Module):
             self._freeze_module(self.residual_v4_trend_norm)
             self._freeze_module(self.residual_v4_segment_head)
             self._freeze_module(self.residual_v4_segment_gate_head)
+            self._freeze_module(self.residual_v5_trend_memory_proj)
+            self._freeze_module(self.residual_v5_key_proj)
+            self._freeze_module(self.residual_v5_value_proj)
+            self._freeze_module(self.residual_v5_text_query_proj)
+            self._freeze_module(self.residual_v5_segment_norm)
+            self._freeze_module(self.residual_v5_basis_head)
+            self._freeze_module(self.residual_v5_coeff_head)
+            self._freeze_module(self.residual_v5_radius_head)
+            self.residual_v5_segment_queries.requires_grad = False
             return
 
         self._freeze_module(self.residual_v3_expert_head)
         self._freeze_module(self.residual_v3_text_router_head)
         self._freeze_module(self.residual_v3_radius_head)
+        if self.residual_style == "v4":
+            self._freeze_module(self.residual_v5_trend_memory_proj)
+            self._freeze_module(self.residual_v5_key_proj)
+            self._freeze_module(self.residual_v5_value_proj)
+            self._freeze_module(self.residual_v5_text_query_proj)
+            self._freeze_module(self.residual_v5_segment_norm)
+            self._freeze_module(self.residual_v5_basis_head)
+            self._freeze_module(self.residual_v5_coeff_head)
+            self._freeze_module(self.residual_v5_radius_head)
+            self.residual_v5_segment_queries.requires_grad = False
+            return
+
+        self._freeze_module(self.residual_v4_num_trend_proj)
+        self._freeze_module(self.residual_v4_text_gamma)
+        self._freeze_module(self.residual_v4_text_beta)
+        self._freeze_module(self.residual_v4_trend_norm)
+        self._freeze_module(self.residual_v4_segment_head)
+        self._freeze_module(self.residual_v4_segment_gate_head)
 
     def train(self, mode=True):
         super().train(mode)
@@ -521,10 +595,54 @@ class Model_Fit_Fusion(nn.Module):
         self.aux_loss = None
         return y_num + delta
 
+    def _apply_residual_v5(self, text_ctx, numerical_features, numerical_contexts):
+        y_num = numerical_features["forecast"]
+        encoded_tokens = numerical_features["encoded_tokens"]
+        batch_size = y_num.shape[0]
+
+        # [B, patch_count, d_model] -> [B, patch_count, fusion_hidden]
+        trend_memory = encoded_tokens.mean(dim=1)
+        trend_memory = self.residual_v5_trend_memory_proj(trend_memory)
+        keys = self.residual_v5_key_proj(trend_memory)
+        values = self.residual_v5_value_proj(trend_memory)
+
+        text_query = self.residual_v5_text_query_proj(text_ctx).unsqueeze(1)
+        segment_queries = self.residual_v5_segment_queries.unsqueeze(0) + text_query
+        attn_scores = torch.einsum("bsh,bph->bsp", segment_queries, keys) / (self.fusion_hidden ** 0.5)
+        attn_weights = torch.softmax(attn_scores, dim=-1)
+        segment_ctx = torch.einsum("bsp,bph->bsh", attn_weights, values)
+        segment_ctx = self.residual_v5_segment_norm(segment_ctx)
+
+        summary_seg = numerical_contexts["summary_ctx"].unsqueeze(1).expand(batch_size, self.trend_segments, -1)
+        hist_seg = numerical_contexts["hist_ctx"].unsqueeze(1).expand(batch_size, self.trend_segments, -1)
+        text_seg = text_ctx.unsqueeze(1).expand(batch_size, self.trend_segments, -1)
+
+        basis_input = torch.cat([segment_ctx, summary_seg, hist_seg], dim=-1)
+        trend_basis = self.residual_v5_basis_head(basis_input).reshape(
+            batch_size,
+            self.trend_segments,
+            self.num_channels,
+            self.num_experts,
+        )
+
+        coeff_input = torch.cat([text_seg, segment_ctx], dim=-1)
+        coeff = torch.softmax(self.residual_v5_coeff_head(coeff_input), dim=-1)
+        delta_raw = torch.einsum("bsck,bsk->bsc", trend_basis, coeff.to(dtype=trend_basis.dtype))
+
+        radius_input = torch.cat([text_seg, segment_ctx, hist_seg], dim=-1)
+        radius = torch.sigmoid(self.residual_v5_radius_head(radius_input)).to(dtype=y_num.dtype)
+
+        delta_segments = radius * torch.tanh(delta_raw.to(dtype=y_num.dtype))
+        delta = self._expand_piecewise_constant(delta_segments, self.pred_len).to(dtype=y_num.dtype)
+        self.aux_loss = None
+        return y_num + delta
+
     def _apply_residual(self, text_ctx, numerical_features, numerical_contexts):
         if self.residual_style == "v3":
             return self._apply_residual_v3(text_ctx, numerical_features, numerical_contexts)
-        return self._apply_residual_v4(text_ctx, numerical_features, numerical_contexts)
+        if self.residual_style == "v4":
+            return self._apply_residual_v4(text_ctx, numerical_features, numerical_contexts)
+        return self._apply_residual_v5(text_ctx, numerical_features, numerical_contexts)
 
     def forward(
         self,

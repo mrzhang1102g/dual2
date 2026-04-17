@@ -1,6 +1,6 @@
-﻿# FIT 服务器执行手册
+﻿﻿# FIT 服务器执行手册
 
-最后更新：2026-04-16
+最后更新：2026-04-17
 
 ## 文档定位
 
@@ -238,7 +238,7 @@
 - 当前仍然不能直接说 `residual_v3` 已经赢过 `direct_v3`
 - `v3` 的信息增量已经足够，不再继续补完整控制实验
 
-## 0414 v4 第一轮入口
+## 0414 v4 结果回顾
 
 当前 `0414` 根目录 active half-year fusion 脚本更新为：
 
@@ -268,10 +268,58 @@
   - 改成趋势级、分段常数的 forecast-space correction
   - 文本先读取数值趋势上下文，再输出低频纠偏
 
+结果：
+
+| setting | MAE | MSE | RMSE | MAPE | WAPE |
+|---|---:|---:|---:|---:|---:|
+| `direct_v3 + ckpt + unfreeze` | 0.079424 | 0.011435 | 0.106934 | 29.03% | 17.13% |
+| `residual_v4 + ckpt + unfreeze` | 0.079641 | 0.011568 | 0.107555 | 28.56% | 17.18% |
+
+当前第一轮解读：
+
+- `direct_v3` 不需要重跑，它在这轮仍然作为稳定基线
+- `residual_v4` 相比 `residual_v3` 有小幅改善：
+  - `MAE: 0.079695 -> 0.079641`
+  - `MAPE: 28.79% -> 28.56%`
+  - `WAPE: 17.19% -> 17.18%`
+- 但 `residual_v4` 仍然没有在 `MAE / WAPE` 上压过 `direct_v3`
+- 当前说明 `v4` 的趋势级纠偏方向是合理的，但增量还不够大
+
+## 0414 v5 第一轮入口
+
+当前 `0414` 根目录 active half-year fusion 脚本更新为：
+
+- [fit_fusion_halfyear_direct_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v3.sh)
+- [fit_fusion_halfyear_residual_v5.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v5.sh)
+
+固定配置：
+
+- `real long text = ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt`
+- `num_model_path = ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth`
+- `unfreeze numerical`
+- `train_epochs = 20`
+- `patience = 100`
+- `adjust = 0`
+- `fusion_optimizer_mode = split`
+- `fit_scaler_mode = train_only`
+- `text_hidden = 128`
+- `num_experts = 4`
+- `trend_segments = 4`
+
+`v5` 设计目标：
+
+- `direct_v3`
+  - 继续作为稳定 direct 基线
+- `residual_v5`
+  - 文本带着分段 query 去读数值 patch memory
+  - 再从 text-aligned segment context 生成低频分段纠偏
+  - 比 `v4` 更强调“文本在具体数值状态下决定纠偏策略”
+
 当前结果先留空，待服务器首轮返回后再补：
 
 | setting | MAE | MSE | RMSE | MAPE | WAPE |
 |---|---:|---:|---:|---:|---:|
 | `direct_v3 + ckpt + unfreeze` | pending | pending | pending | pending | pending |
-| `residual_v4 + ckpt + unfreeze` | pending | pending | pending | pending | pending |
+| `residual_v5 + ckpt + unfreeze` | pending | pending | pending | pending | pending |
+
 

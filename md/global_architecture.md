@@ -1,6 +1,6 @@
-﻿# FIT 架构文档
+﻿﻿# FIT 架构文档
 
-最后更新：2026-04-16
+最后更新：2026-04-17
 
 ## 文档定位
 
@@ -739,12 +739,80 @@
 当前 half-year active fusion 入口：
 
 - [fit_fusion_halfyear_direct_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v3.sh)
-- [fit_fusion_halfyear_residual_v4.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v4.sh)
+- [fit_fusion_halfyear_residual_v5.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v5.sh)
 
 其中：
 
 - `direct_v3` 是稳定基线
-- `residual_v4` 是当前 residual 主方法
+- `residual_v5` 是当前 residual 主方法
+
+当前第一轮结果：
+
+- `direct_v3 + ckpt + unfreeze`
+  - `MAE = 0.079424`
+  - `MAPE = 29.03%`
+  - `WAPE = 17.13%`
+- `residual_v4 + ckpt + unfreeze`
+  - `MAE = 0.079641`
+  - `MAPE = 28.56%`
+  - `WAPE = 17.18%`
+
+当前判断：
+
+- `residual_v4` 相比 `residual_v3` 有小幅改善
+- 但还没有在 `MAE / WAPE` 上超过 `direct_v3`
+- 因此 `v4` 说明方向更合理了，但结构还需要继续增强
+
+## Residual v5
+
+### 设计目标
+
+`residual_v5` 继续保留 `v4` 的趋势级、分段常数 forecast-space correction 思路，但进一步强化“文本在具体数值状态下决定纠偏策略”。
+
+核心变化：
+
+1. 文本不再只调制一个全局趋势上下文
+2. 文本带着分段 query 去读数值 patch memory
+3. 再从 text-aligned segment context 生成 segment-level correction
+
+### 结构
+
+数值 patch memory：
+
+- `encoded_tokens -> mean over variables -> trend_memory`
+- `trend_memory -> key / value`
+
+文本 query：
+
+- `caption_emb -> text_proj -> text_ctx`
+- `text_ctx -> text_query`
+
+分段 query：
+
+- `segment_query = learnable_segment_query + text_query`
+
+然后每个 segment query 对 patch memory 做注意力，得到：
+
+- `segment_ctx`
+
+再基于：
+
+- `segment_ctx`
+- `text_ctx`
+- `summary_ctx`
+- `hist_ctx`
+
+分别预测：
+
+- `trend_basis`
+- `coeff`
+- `radius`
+
+最终：
+
+- `delta_segments = radius * tanh(sum_k basis_k * coeff_k)`
+- `delta = piecewise_constant_expand(delta_segments)`
+- `y_final = y_num + delta`
 
 ## Disable Text
 
@@ -764,7 +832,7 @@
 当前 0414 活跃的 FIT half-year fusion 脚本是：
 
 - [fit_fusion_halfyear_direct_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v3.sh)
-- [fit_fusion_halfyear_residual_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v3.sh)
+- [fit_fusion_halfyear_residual_v5.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v5.sh)
 
 首轮固定配置：
 
@@ -799,4 +867,5 @@
 
 - 不只是减少文本被绕开
 - 而是尽量让“文本内容不同”也会导致不同的路由和纠偏模式
+
 
