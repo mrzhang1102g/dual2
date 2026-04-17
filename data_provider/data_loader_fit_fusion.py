@@ -1,15 +1,16 @@
 """
-FIT 融合流 loader。
+FIT fusion loader.
 
-当前文本流仍是离线 caption embedding 路线：
-- 先从 FIT 原始 json 中读取数值序列与元数据
-- 再按同一组 sample_indices 对齐 caption_emb
+0417 active line:
+- 仍然从 FIT 原始 json 读取数值序列与元数据
+- 文本输入改为直接读取 json 中的原始字段（默认 `annotations`）
+- 不再依赖离线 `caption_emb.pt`
 """
 
 import numpy as np
 from torch.utils.data import Dataset
 
-from data_provider.fit_dataset_utils import load_fit_caption_embeddings, prepare_fit_dataset
+from data_provider.fit_dataset_utils import load_fit_text_field, prepare_fit_dataset
 from utils.logger import log
 
 
@@ -27,7 +28,7 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
         scale=True,
         timeenc=0,
         freq="w",
-        caption_emb_path=None,
+        text_field="annotations",
         seasonal_patterns=None,
         train_ratio=0.7,
         val_ratio=0.1,
@@ -35,9 +36,8 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
         max_samples=-1,
         fit_scaler_mode="train_only",
     ):
+        del timeenc, freq, seasonal_patterns, test_ratio
         assert flag in ["train", "val", "test"]
-        if caption_emb_path is None:
-            raise ValueError("caption_emb_path must be provided for FIT_Fusion")
 
         self.flag = flag
         self.features = features
@@ -45,10 +45,9 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
         self.scale = scale
         self.root_path = root_path
         self.data_path = data_path
-        self.caption_emb_path = caption_emb_path
+        self.text_field = text_field
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
-        self.test_ratio = test_ratio
         self.fit_scaler_mode = fit_scaler_mode
 
         if size is None:
@@ -89,6 +88,13 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
         self.num_genders = prepared["num_genders"]
         self.num_ages = prepared["num_ages"]
 
+        self.caption_text = load_fit_text_field(
+            root_path=self.root_path,
+            data_path=self.data_path,
+            sample_indices=self.sample_indices,
+            text_field=self.text_field,
+        )
+
         log(f"[FIT-Fusion][{self.flag}] loaded {len(self.series)} samples")
         log(
             f"Elements:{len(self.element_map)}, "
@@ -97,10 +103,7 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
             f"Ages:{self.num_ages}"
         )
         log(f"[FIT-Fusion][{self.flag}] scaler_mode={self.fit_scaler_mode}")
-
-        log(f"[FIT-Fusion] Loading caption embedding from: {self.caption_emb_path}")
-        self.caption_emb = load_fit_caption_embeddings(self.caption_emb_path, self.sample_indices)
-        log(f"[FIT-Fusion] caption_emb aligned: {tuple(self.caption_emb.shape)}")
+        log(f"[FIT-Fusion][{self.flag}] text_field={self.text_field}")
 
     def __getitem__(self, index):
         return (
@@ -112,7 +115,7 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
             self.gender_ids[index],
             self.age_ids[index],
             self.element_ids[index],
-            self.caption_emb[index],
+            self.caption_text[index],
         )
 
     def __len__(self):
@@ -121,4 +124,5 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
     def inverse_transform(self, data):
         if not self.scale or self.scaler is None:
             return data
-        return self.scaler.inverse_transform(np.asarray(data).reshape(-1, 1)).reshape(np.asarray(data).shape)
+        array = np.asarray(data)
+        return self.scaler.inverse_transform(array.reshape(-1, 1)).reshape(array.shape)

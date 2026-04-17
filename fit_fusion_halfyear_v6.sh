@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# FIT half-year fusion v2: direct + load numerical checkpoint + unfreeze
+# FIT half-year fusion v6: DualSG-style raw-text forecast-space fusion
 source /data1/miniconda3/bin/activate dualsg2
 
 python run.py \
   --task_name fit_fusion \
   --is_training 1 \
-  --model_id fit_fusion_halfyear_direct_v2 \
+  --model_id fit_fusion_halfyear_v6 \
   --model Model_Fit_Fusion \
   --data FIT_Fusion \
   --root_path ./dataset/ \
@@ -21,14 +21,15 @@ python run.py \
   --batch_size 200 \
   --patience 100 \
   --num_model_path ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth \
-  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt \
-  --text_mode direct \
   --fusion_optimizer_mode split \
   --adjust 0 \
   --lr_num 0.0001 \
   --lr_text 0.0005 \
-  --text_hidden 128 \
-  --residual_rank 8 \
+  --text_model_path ./weights/gpt2 \
+  --text_model_type gpt2 \
+  --text_field annotations \
+  --text_pool_type avg \
+  --text_max_length 256 \
   --num_feat_dim 64 \
   --fusion_hidden 128 \
   --fusion_dropout 0.1 \

@@ -92,9 +92,6 @@ def data_provider(args, flag):
     # FIT Fusion（数值 + 文本语义）
     # ===========================================================
     if args.data == 'FIT_Fusion':
-        if not hasattr(args, "caption_emb_path"):
-            raise ValueError("args.caption_emb_path must be set for FIT_Fusion")
-
         data_set = Dataset_DualSG_Fit_Fusion(
             root_path=args.root_path,
             data_path=args.data_path,
@@ -105,7 +102,7 @@ def data_provider(args, flag):
             scale=args.scale,
             timeenc=timeenc,
             freq=freq,
-            caption_emb_path=args.caption_emb_path,
+            text_field=getattr(args, "text_field", "annotations"),
             train_ratio=getattr(args, "train_ratio", 0.7),
             val_ratio=getattr(args, "val_ratio", 0.1),
             test_ratio=getattr(args, "test_ratio", 0.2),

@@ -171,14 +171,13 @@ def add_fusion_args(parser):
 
     parser.add_argument("--freeze_numerical", action="store_true")
     parser.add_argument("--disable_text", action="store_true")
-    parser.add_argument("--text_mode", type=str, default="direct", choices=["direct", "residual"])
     parser.add_argument("--fusion_optimizer_mode", type=str, default="unified", choices=["unified", "split"])
 
-    parser.add_argument("--text_hidden", type=int, default=128)
-    parser.add_argument("--num_experts", type=int, default=4)
-    parser.add_argument("--residual_style", type=str, default="v5", choices=["v3", "v4", "v5"])
-    parser.add_argument("--trend_segments", type=int, default=4)
-    parser.add_argument("--residual_rank", type=int, default=8)
+    parser.add_argument("--text_model_path", type=str, default="./weights/gpt2")
+    parser.add_argument("--text_model_type", type=str, default="gpt2")
+    parser.add_argument("--text_field", type=str, default="annotations")
+    parser.add_argument("--text_pool_type", type=str, default="avg", choices=["avg", "max", "min"])
+    parser.add_argument("--text_max_length", type=int, default=256)
     parser.add_argument("--num_feat_dim", type=int, default=48)
     parser.add_argument("--fusion_dropout", type=float, default=0.1)
     parser.add_argument("--fusion_hidden", type=int, default=96)
@@ -191,6 +190,7 @@ def add_fusion_args(parser):
 
     # Geo fusion 兼容参数仍保留，FIT 新实现不再使用。
     parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument("--text_mode", type=str, default="direct", choices=["direct", "residual"])
     parser.add_argument("--direct_w_mode", type=str, default="learned", choices=["learned", "fixed"])
     parser.add_argument("--direct_w_fixed", type=float, default=0.5)
 

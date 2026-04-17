@@ -29,8 +29,10 @@ class Exp_Fit_Fusion(Exp_Basic):
     def _build_model(self, args):
         num_ckpt = getattr(args, "num_model_path", None)
         self.log(f"num_ckpt: {num_ckpt}")
-        self.log(f"text_mode: {getattr(args, 'text_mode', 'direct')}")
         self.log(f"disable_text: {getattr(args, 'disable_text', False)}")
+        self.log(f"text_model_type: {getattr(args, 'text_model_type', 'gpt2')}")
+        self.log(f"text_model_path: {getattr(args, 'text_model_path', './weights/gpt2')}")
+        self.log(f"text_field: {getattr(args, 'text_field', 'annotations')}")
 
         model = FusionModel(args, numerical_ckpt_path=num_ckpt).float()
         if args.use_multi_gpu and args.use_gpu:
@@ -148,7 +150,7 @@ class Exp_Fit_Fusion(Exp_Basic):
             gender_id,
             age_id,
             element_id,
-            caption_emb,
+            caption_text,
         ) = batch
 
         if batch_x.dim() == 2:
@@ -165,11 +167,11 @@ class Exp_Fit_Fusion(Exp_Basic):
             gender_id.long().to(self.device),
             age_id.long().to(self.device),
             element_id.long().to(self.device),
-            caption_emb.float().to(self.device),
+            list(caption_text),
         )
 
     def _forward_batch(self, batch):
-        batch_x, batch_y, batch_x_mark, batch_y_mark, city_id, gender_id, age_id, element_id, caption_emb = batch
+        batch_x, batch_y, batch_x_mark, batch_y_mark, city_id, gender_id, age_id, element_id, caption_text = batch
         outputs = self.model(
             batch_x,
             batch_x_mark,
@@ -179,7 +181,7 @@ class Exp_Fit_Fusion(Exp_Basic):
             gender_id,
             age_id,
             element_id,
-            caption_emb,
+            caption_text,
         )
         target = batch_y[:, -self.args.pred_len :, -1:]
         return outputs, target

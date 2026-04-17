@@ -1,561 +1,84 @@
-﻿﻿# FIT 重构工作记录
+﻿# FIT 閲嶆瀯宸ヤ綔璁板綍
 
-最后更新：2026-04-17
+鏈€鍚庢洿鏂帮細2026-04-17
 
-## 0411 阶段回顾
+## 0411 闃舵鍥為【
 
-`0411` 已经完成的工作：
+`0411` 宸茬粡瀹屾垚锛?
+- FIT 鏁版嵁灞傚叕鍏遍€昏緫鎶藉彇
+- `train_only` scaler 淇
+- `fit_num_with_meta` 涓诲共淇濈暀涓嶅姩
+- fusion 璁粌鑴氭湰鏁寸悊
+- random / filler / disable_text 鎺у埗瀹為獙
+- structured / multi-view 鏂囨湰瀹為獙
+- legacy 澶存仮澶嶈瘖鏂?- 鑴氭湰涓庣粨鏋滃揩鐓у綊妗ｅ埌 `scripts_archive/fit_halfyear_0411/`
 
-- FIT 数据层公共逻辑抽取
-- `train_only` scaler 修正
-- `fit_num_with_meta` 主干保留不动
-- fusion 训练脚本整理
-- random / filler / disable_text 控制实验
-- structured / multi-view 文本实验
-- legacy 头恢复诊断
-- 脚本与结果快照归档到 `scripts_archive/fit_halfyear_0411/`
+杩欎竴闃舵鏈€澶х殑浠峰€间笉鏄€滃緱鍒版渶缁堢粨鏋勨€濓紝鑰屾槸鎶婇棶棰樺畾浣嶆竻妤氾細
 
-这一步的最大价值不是“得到最终模型”，而是把问题定位清楚：
+- 鏃х殑 `emb.pt + fusion` 璺嚎鍏佽妯″瀷缁曞紑鏂囨湰
+- `random / filler / disable_text` 涓庣湡瀹炴枃鏈樊寮傚お灏?
+## 0414 闃舵鍥為【
 
-- 0411 那套 active fusion 结构允许模型几乎绕开文本
-- 因此真实文本、random、filler、disable_text 几乎没有本质差异
+`0414` 渚濇楠岃瘉浜嗭細
 
-## 为什么 0411 不够
+- `v2`锛氭樉寮忔暟鍊?skip 鐨勫弻娴?direct / basis-text residual
+- `v3`锛? 涓€欓€?expert routing residual
+- `v4`锛氳秼鍔跨骇銆佸垎娈靛父鏁?correction residual
+- `v5`锛歵ext-aligned segment residual
 
-0411 已经坐实了三件事：
+缁熶竴缁撹锛?
+1. `direct_v3` 鎴愪负褰撳墠鏈€绋崇殑 direct 鍩虹嚎
+2. residual 瀹舵棌姣忎竴浠ｉ兘鏈変竴鐐硅繘姝?3. 浣嗙洿鍒?`v5`锛屼粛鐒舵病鏈夊湪 `MAE / WAPE` 涓婂帇杩?`direct_v3`
+4. 鍥犳缁х画鍦?`emb.pt + residual` 瀹舵棌涓婅凯浠ｏ紝棰勬湡鏀剁泭宸茬粡寰堜綆
 
-1. `residual + ckpt + unfreeze` 是最强 recipe
-2. 但当前 strongest recipe 的增益并不能归因为文本语义
-3. 恢复 legacy 头也没有直接把旧版最好结果拿回来
+鍏抽敭瀵规瘮锛?
+- `direct_v3`
+  - `MAE = 0.079424`
+  - `MAPE = 29.03%`
+  - `WAPE = 17.13%`
+- `residual_v5`
+  - `MAE = 0.079558`
+  - `MAPE = 28.90%`
+  - `WAPE = 17.16%`
 
-具体表现：
+## 涓轰粈涔堝仠姝㈢淮鎶?v3-v5 active 璺嚎
 
-- `random text ≈ filler text ≈ real text ≈ disable_text`
-- `legacy direct` 比 `modern direct` 稳
-- `legacy residual` 与 `modern residual` 基本打平
+褰撳墠鍒ゆ柇宸茬粡姣旇緝鏄庣‘锛?
+- 闂涓嶅啀鏄€滄枃鏈槸涓嶆槸澶熷己鈥?- 鏇村儚鏄€滄枃鏈渶鍚庢€庝箞琚?forecasting 浣跨敤鈥?
+鎴戜滑浠?DualSG 璁烘枃鍜屽畼鏂瑰疄鐜伴噷寰楀埌鐨勫惎鍙戞槸锛?
+1. DualSG 骞朵笉寮鸿皟 latent-space 娣卞榻?2. 瀹冨厛鍗曠嫭璁粌 TSCG锛岀敓鎴?caption
+3. 姝ｅ紡棰勬祴闃舵锛屾暟鍊兼祦鍜屾枃鏈祦鐩稿鐙珛
+4. 鏂囨湰娴佸湪 forecast space 閲岀粰鍑鸿涔変慨姝?
+杩欏拰鎴戜滑涔嬪墠鐨?`emb.pt + deep residual fusion` 璺嚎骞朵笉涓€鏍枫€?
+## 0417 褰撳墠鍐冲畾
 
-因此问题不再是：
+`0417` 寮€濮嬶紝FIT active fusion 鏀规垚 `v6`锛?
+- 涓嶅啀璇诲彇 `caption_emb.pt`
+- 鐩存帴浠?FIT json 閲岃鍙?`annotations`
+- 鍦ㄧ嚎杩涘叆鍐荤粨鐨勬湰鍦版枃鏈紪鐮佹ā鍨?- 鍋?token pooling
+- 鎶曞奖鍒伴娴嬬┖闂?- 涓?`y_num` 鐩存帴鍋?forecast-space 铻嶅悎
 
-- “要不要再换一种 prompt”
+涔熷氨鏄細
 
-而是：
+- `y_final = (1 - w_t) * y_num + w_t * y_text`
 
-- “如何从结构上减少文本被绕开的路径”
+## 0417 v6 鐩爣
 
-## 0414 主线改动
+杩欒疆涓嶆槸缁х画杩芥眰鈥滄洿澶嶆潅鐨?residual鈥濓紝鑰屾槸鍏堝洖绛斾竴涓洿鍩虹鐨勯棶棰橈細
 
-### v2 目标
+- 濡傛灉鐩存帴鎸?DualSG 椋庢牸鏀规垚 raw-text forecast-space fusion锛岀粨鏋滀細涓嶄細鏇村悎鐞嗭紵
 
-`0414` 不再保留 `legacy/modern` 的运行时兼容。
+鍥犳 `v6` 绗竴杞彧鍋氾細
 
-当时活跃主线只保留：
+- FIT half-year
+- `ckpt + unfreeze`
+- `real raw text`
+- 鍐荤粨鏈湴 GPT2
+- 鍙窇 `20 epoch`
 
-- `direct`
-- `residual`
-
-目标分工：
-
-- `direct`
-  - 做成可解释的双流显式融合基线
-- `residual`
-  - 做成真正的文本纠偏器
-  - 保证纠偏数学上必须经过文本
-
-### v2 代码层变化
-
-#### `run.py`
-
-- 保留 active FIT fusion 需要的参数：
-  - `text_mode`
-  - `num_model_path`
-  - `caption_emb_path`
-  - `freeze_numerical`
-  - `disable_text`
-  - `fusion_optimizer_mode`
-  - `num_feat_dim`
-  - `fusion_hidden`
-  - `fusion_dropout`
-- 新增：
-  - `text_hidden`
-  - `residual_rank`
-- 不再保留 `fusion_version` 作为 0414 活跃入口的一部分
-
-#### `utils/print_args.py`
-
-- 改成只打印 0414 主线真正用到的 FIT fusion 参数
-- 不再把 legacy 专属字段当成当前活跃配置展示
-
-#### `models/model_fit_fusion.py`
-
-重写成单一路径：
-
-- 没有 `modern / legacy` 运行时分支
-- 数值 backbone 仍然复用 `Model_Fit_Num_With_Meta`
-- 文本侧统一先走：
-  - `caption_emb -> text_proj -> text_ctx`
-
-`direct` 结构：
-
-- `text_ctx -> direct_text_head -> y_text`
-- `gate_input = [text_ctx, summary_ctx, y_num_ctx, hist_ctx]`
-- `gate = sigmoid(direct_gate_head(...))`
-- `y_final = (1 - gate) * y_num + gate * y_text`
-
-`residual` 结构：
-
-- 数值侧只生成 residual basis：
-  - `residual_basis -> [B, pred_len, C, R]`
-- 文本侧生成：
-  - basis 系数 `text_coeff`
-  - 幅度门控 `radius`
-- 最终：
-  - `delta_raw = sum_k basis_k * coeff_k`
-  - `delta = radius * tanh(delta_raw)`
-  - `y_final = y_num + delta`
-
-关键约束：
-
-- residual 里没有“纯数值分支直接输出 delta”的路径
-
-#### `exp/exp_fit_fusion.py`
-
-- 去掉了 `fusion_version` 的运行时日志
-- 保持训练流程不变
-- 继续保留 split / unified 优化器逻辑
-
-## 0414 v2 active 脚本
-
-0414 v2 阶段根目录只保留两个 half-year fusion 入口：
-
-- `fit_fusion_halfyear_direct_v2.sh`
-- `fit_fusion_halfyear_residual_v2.sh`
-
-旧的 half-year fusion 根目录脚本已经移出 active 区域。
-
-完整 0411 快照仍在：
-
-- `scripts_archive/fit_halfyear_0411/`
-
-## 0414 v2 阶段判断
-
-0414 首轮还没有开始看最终指标，当前阶段先看结构是否满足设计目标：
-
-1. `direct` 仍有显式数值 skip
-2. `residual` 的纠偏必须经过文本系数
-3. `disable_text=True` 仍能退化成纯数值预测
-
-后续第一轮只跑：
-
-- `fit_fusion_halfyear_direct_v2.sh`
-- `fit_fusion_halfyear_residual_v2.sh`
-
-如果 `residual_v2` 更稳，再进入第二轮控制实验：
+鍚庣画鍙湁鍦ㄩ杞粨鏋滆嚦灏戜笉宸簬 `direct_v3` 鏃讹紝鎵嶄細缁х画琛ワ細
 
 - `disable_text`
 - `random`
 - `filler`
-
-## 0414 v2 首轮结果
-
-用户已经完成：
-
-- `fit_fusion_halfyear_direct_v2.sh`
-- `fit_fusion_halfyear_residual_v2.sh`
-
-结果：
-
-- `direct_v2 + ckpt + unfreeze`
-  - `MAE = 0.079404`
-  - `MSE = 0.011418`
-  - `RMSE = 0.106854`
-  - `MAPE = 29.18%`
-  - `WAPE = 17.13%`
-- `residual_v2 + ckpt + unfreeze`
-  - `MAE = 0.079863`
-  - `MSE = 0.011669`
-  - `RMSE = 0.108021`
-  - `MAPE = 28.60%`
-  - `WAPE = 17.23%`
-
-当前解读：
-
-- `direct_v2` 已经是目前最强的 direct 版本
-- 说明把显式数值 skip 加回来是有效的
-- `residual_v2` 在 `MAPE` 上更好，说明它在比例误差层面更有潜力
-- 但 `residual_v2` 目前还没有在 `MAE / WAPE` 上压过 `direct_v2`
-
-因此当前最合理的下一步不是立刻拉 `100 epoch`，而是先补文本控制实验。
-
-## 0414 v2 控制实验结果
-
-用户随后补完了三类控制：
-
-- `disable_text`
-- `random text`
-- `filler text`
-
-结果如下。
-
-### `disable_text`
-
-- `direct_v2 + ckpt + unfreeze + disable_text`
-  - `MAE = 0.080189`
-  - `MSE = 0.011770`
-  - `RMSE = 0.108491`
-  - `MAPE = 28.75%`
-  - `WAPE = 17.30%`
-- `residual_v2 + ckpt + unfreeze + disable_text`
-  - `MAE = 0.080189`
-  - `MSE = 0.011770`
-  - `RMSE = 0.108491`
-  - `MAPE = 28.75%`
-  - `WAPE = 17.30%`
-
-这两组完全一致，符合当前实现语义：
-
-- 关闭文本后，两种模式都严格退化成纯数值预测
-
-### `filler text`
-
-- `direct_v2 + ckpt + unfreeze + filler`
-  - `MAE = 0.079494`
-  - `MSE = 0.011439`
-  - `RMSE = 0.106952`
-  - `MAPE = 29.26%`
-  - `WAPE = 17.15%`
-- `residual_v2 + ckpt + unfreeze + filler`
-  - `MAE = 0.079827`
-  - `MSE = 0.011651`
-  - `RMSE = 0.107941`
-  - `MAPE = 28.72%`
-  - `WAPE = 17.22%`
-
-### `random text`
-
-- `direct_v2 + ckpt + unfreeze + random`
-  - `MAE = 0.079525`
-  - `MSE = 0.011442`
-  - `RMSE = 0.106967`
-  - `MAPE = 29.33%`
-  - `WAPE = 17.16%`
-- `residual_v2 + ckpt + unfreeze + random`
-  - `MAE = 0.079860`
-  - `MSE = 0.011664`
-  - `RMSE = 0.108002`
-  - `MAPE = 28.65%`
-  - `WAPE = 17.23%`
-
-## 当前阶段结论
-
-0414 v2 到这里已经可以得出比较明确的判断。
-
-### 结构层面
-
-- 第三代结构比第二代更稳
-- 尤其是 `direct_v2`，已经明显强于 0411 的 direct 系列
-- 这说明“保留显式数值 skip，再做动态融合”是正确方向
-
-### 语义层面
-
-- `direct_v2` 的真实文本、filler、random 都非常接近，而且都只比 `disable_text` 略好一点
-- `residual_v2` 的真实文本、filler、random、disable_text 几乎完全重合
-
-这意味着：
-
-- 第三代结构虽然比第二代干净、稳定
-- 但文本语义贡献仍然没有被坐实
-
-也就是说，当前还不能支持这样的叙事：
-
-- `real text > filler text > random text > disable_text`
-
-### 对两条主线的判断
-
-- `direct_v2`
-  - 当前最强的 direct 版本
-  - 可能已经从“有文本分支”这件事本身获得了轻微辅助增益
-  - 但还没有形成清晰的语义排序
-- `residual_v2`
-  - 结构上更接近我们真正想要的“文本纠偏器”
-  - 但文本系数对 real / filler / random 的区分仍然太弱
-  - 因而还没有把结构约束兑现成语义增益
-
-## 为什么还要继续改到 v3
-
-到 `disable_text / random / filler` 跑完为止，v2 已经给出足够清晰的信号：
-
-- `direct_v2` 变稳了
-- `residual_v2` 结构上更合理了
-- 但文本语义仍然没有真正被坐实
-
-因此当前最合理的方向不再是：
-
-- 立刻把 v2 拉到更长训练轮数
-- 继续堆更多 prompt / 更多文本版本
-
-而是进入 `v3`：
-
-- 继续做结构重写
-- 重点继续改 `residual`
-- 同时顺手把 `direct` 升级成轻量多候选文本预测
-- 让“文本内容不同”必须导致不同的纠偏策略
-
-更具体地说，下一轮要重点解决：
-
-1. 为什么 `text_coeff` 对 real / filler / random 的区分仍然这么弱
-2. 为什么 `residual_v2` 在结构上要求文本参与，但结果上仍然接近 `disable_text`
-3. 是否需要把 `direct_v2` 的稳定性优点进一步借给新的 residual 设计
-
-## 0414 v3 设计
-
-### 命名约定
-
-从现在开始，按当前分支内的实验版本命名：
-
-- `0411` 阶段 active 结构记为 `v1`
-- `0414` 的第一轮重写记为 `v2`
-- 当前即将运行的 expert-routing 重写记为 `v3`
-
-用户更早的历史最好结果仍然保留为“历史旧版最好结果”，不并入这个 `v1 / v2 / v3` 序列。
-
-### v3 direct
-
-`direct_v3` 继续保留：
-
-- 显式数值 skip
-- `y_final = (1 - gate) * y_num + gate * y_text`
-
-但文本流不再只输出一个 `y_text`，而是：
-
-- 先输出 4 个候选文本预测
-- 再由文本路由权重把这 4 个候选混合成最终 `y_text`
-
-目标是：
-
-- 在不破坏稳定性的前提下
-- 让文本侧至少具备几种不同的预测模式
-
-### v3 residual
-
-`residual_v3` 仍保持：
-
-- `y_final = y_num + delta`
-
-但 `delta` 的产生方式进一步收紧为：
-
-- 数值侧只输出 4 个候选纠偏 expert
-- 文本侧只负责：
-  - 给这 4 个 expert 做逐步路由
-  - 给纠偏幅度做逐步 gate
-
-最终：
-
-- `delta_mix = sum_k route_k * delta_k`
-- `delta = radius * tanh(delta_mix)`
-
-这里最关键的是：
-
-- 文本不再只是给一个连续系数向量
-- 而是更明确地“选择纠偏模式”
-- 这样理论上更容易把 real / filler / random 拉开
-
-### v3 的额外工程目标
-
-除了结构本身，v3 还顺手解决一个实验可解释性问题：
-
-- 不再打印模型总参数量
-- 改成只打印“本次 optimizer 里真正会更新的参数量”
-
-这样 direct / residual 两条路的日志会更符合真实训练状态。
-
-### 当前 v3 第一轮
-
-当前已经新增：
-
-- `fit_fusion_halfyear_direct_v3.sh`
-- `fit_fusion_halfyear_residual_v3.sh`
-
-固定设置：
-
-- `half-year`
-- `real long text`
-- `ckpt + unfreeze`
-- `train_epochs = 20`
-- `num_experts = 4`
-
-这一轮的目的不是立刻追平历史最好结果，而是先回答：
-
-1. `residual_v3` 能不能重新成为明显强于 `direct_v3` 的主方法
-2. 4 个候选 expert 的路由机制，能不能让文本控制实验开始出现差异
-
-## 0414 v3 第一轮结果
-
-用户已经完成：
-
-- `fit_fusion_halfyear_direct_v3.sh`
-- `fit_fusion_halfyear_residual_v3.sh`
-
-结果：
-
-- `direct_v3 + ckpt + unfreeze`
-  - `MAE = 0.079424`
-  - `MSE = 0.011435`
-  - `RMSE = 0.106934`
-  - `MAPE = 29.03%`
-  - `WAPE = 17.13%`
-- `residual_v3 + ckpt + unfreeze`
-  - `MAE = 0.079695`
-  - `MSE = 0.011593`
-  - `RMSE = 0.107672`
-  - `MAPE = 28.79%`
-  - `WAPE = 17.19%`
-
-当前解读：
-
-- `direct_v3` 和 `direct_v2` 基本持平
-- 说明 direct 这条线已经比较稳定，短期内不太像是主要瓶颈
-- `residual_v3` 相比 `residual_v2`，在 `MAE / WAPE` 上有小幅改善
-- 但它还没有在整体上压过 `direct_v3`
-- 也就是说，“4 个候选 expert + 文本路由”方向是有一点增量的，但还没有强到足以扭转主结论
-
-所以当前最合理的下一步不是：
-
-- 立刻把 `v3` 拉到 `100 epoch`
-- 继续把 `v3` 的 `disable_text / random / filler` 全补齐
-
-原因很直接：
-
-- `v3` 的增量仍然接近“关闭文本后继续训练数值流”量级
-- 再补完整控制实验的信息增量已经不高
-
-## 为什么进入 0414 v4
-
-进入 `v4` 的直接原因有三点：
-
-1. `v3` 仍然没有坐实文本语义贡献
-2. 多 expert routing 更像“文本给若干候选模式分配权重”
-3. DualSG 给出的启发更明确：
-   - 不再执着于 latent alignment
-   - 直接在预测空间做趋势级语义纠偏
-
-因此 `v4` 的方向不是继续加大 expert 数量，而是：
-
-- 保留 `direct_v3` 当基线
-- 只重写 residual
-- 把 residual 收缩成趋势级、分段常数的 forecast-space correction
-
-## 0414 v4 的设计目标
-
-`residual_v4` 的目标：
-
-- 数值流继续负责主预测和高频细节
-- 文本流不碰任意高频 `delta`
-- 文本先读取当前数值趋势上下文
-- 然后只输出低频 `delta_segments`
-
-这版与 `v3` 的区别非常明确：
-
-- `v3`：文本更像在选 expert
-- `v4`：文本更像在输出趋势修正
-
-换句话说，`v4` 不再试图让文本变成“复杂纠偏控制器”，而是让文本只做它更擅长的：
-
-- 方向
-- 强度
-- 分段变化
-
-## 0414 v4 当前落地
-
-当前已完成代码改动：
-
-- `run.py`
-  - 新增 `residual_style`
-  - 新增 `trend_segments`
-- `models/model_fit_fusion.py`
-  - 保留 `direct_v3`
-  - 保留 `residual_v3` 以便回看
-  - 新增 `residual_v4`
-- `fit_fusion_halfyear_residual_v3.sh`
-  - 显式写入 `--residual_style v3`
-- 新增：
-  - `fit_fusion_halfyear_residual_v4.sh`
-
-当前 active 入口切到：
-
-- `fit_fusion_halfyear_direct_v3.sh`
-- `fit_fusion_halfyear_residual_v4.sh`
-
-下一步就是跑这两组 first round，然后再判断：
-
-- `residual_v4` 是否开始显著优于 `direct_v3`
-- 是否值得再补 `disable_text / random / filler`
-
-## 0414 v4 第一轮结果
-
-用户已经完成：
-
-- `fit_fusion_halfyear_residual_v4.sh`
-
-结果：
-
-- `residual_v4 + ckpt + unfreeze`
-  - `MAE = 0.079641`
-  - `MSE = 0.011568`
-  - `RMSE = 0.107555`
-  - `MAPE = 28.56%`
-  - `WAPE = 17.18%`
-
-结合当前 `direct_v3` 基线：
-
-- `direct_v3 + ckpt + unfreeze`
-  - `MAE = 0.079424`
-  - `MAPE = 29.03%`
-  - `WAPE = 17.13%`
-
-当前解读：
-
-- `residual_v4` 相比 `residual_v3` 仍然有小幅进步
-- 说明“趋势级、分段常数 forecast-space correction”方向是合理的
-- 但它还没有在 `MAE / WAPE` 上压过 `direct_v3`
-- 因此 `v4` 目前的状态是：
-  - residual 方向继续在变好
-  - 但还没有达到“主方法已经明显强于 direct 基线”的程度
-
-## 为什么继续做 0414 v5
-
-进入 `v5` 的原因是：
-
-1. `v4` 的趋势级纠偏方向是对的
-2. 但 `v4` 仍然更像“文本调制一个全局趋势上下文”，绑定还不够强
-3. 下一步需要让文本在**具体的数值 patch / segment 状态**下决定纠偏
-
-因此 `v5` 的核心变化不是再增加更多 expert，而是：
-
-- 文本带着分段 query 去读数值 patch memory
-- 先形成 text-aligned segment context
-- 再基于这个 segment context 生成低频分段纠偏
-
-## 0414 v5 当前落地
-
-当前已完成代码改动：
-
-- `run.py`
-  - `residual_style` 默认切到 `v5`
-- `models/model_fit_fusion.py`
-  - 保留 `residual_v3`
-  - 保留 `residual_v4`
-  - 新增 `residual_v5`
-- 新增：
-  - `fit_fusion_halfyear_residual_v5.sh`
-
-当前 active 入口切到：
-
-- `fit_fusion_halfyear_direct_v3.sh`
-- `fit_fusion_halfyear_residual_v5.sh`
-
-下一步就是跑这两组 first round，然后再判断：
-
-- `residual_v5` 是否能在 `MAE / WAPE` 上开始接近或超过 `direct_v3`
-- 是否值得再补 `disable_text / random / filler`
-
 

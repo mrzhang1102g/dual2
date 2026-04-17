@@ -1,871 +1,165 @@
-﻿﻿# FIT 架构文档
+﻿# FIT 鏋舵瀯鏂囨。
 
-最后更新：2026-04-17
+鏈€鍚庢洿鏂帮細2026-04-17
 
-## 文档定位
+## 鏂囨。瀹氫綅
 
-这份文档只描述当前 `0414` 分支里 FIT 的活跃实现。
+杩欎唤鏂囨。鍙弿杩板綋鍓?`0417` 鍒嗘敮閲?FIT 鐨?active 瀹炵幇銆?
+鍘嗗彶闃舵璇存槑锛?
+- `0411`锛氳瘖鏂笌褰掓。鍒嗘敮锛岄獙璇佷簡 `random / filler / disable_text` 瀵规棫 fusion 鐨勫奖鍝?- `0414`锛歚v2-v5` 缁撴瀯閲嶅啓鍒嗘敮锛岄獙璇佷簡澶氱増 residual 鏀归€犵殑涓婇檺
 
-`0411` 阶段的诊断脚本、旧结构和结果快照已经归档，不再作为当前主线的一部分：
-
+鏃у疄楠屽拰鑴氭湰蹇収浠嶄繚鐣欏湪锛?
 - [fit_halfyear_0411_manifest.md](/D:/zhangjing/project/Dualsg_refined/md/fit_halfyear_0411_manifest.md)
 - [scripts_archive/fit_halfyear_0411/README.md](/D:/zhangjing/project/Dualsg_refined/scripts_archive/fit_halfyear_0411/README.md)
 
-配套文档：
-
+閰嶅鏂囨。锛?
 - [fit_server_runbook.md](/D:/zhangjing/project/Dualsg_refined/md/fit_server_runbook.md)
 - [fit_refactor_worklog.md](/D:/zhangjing/project/Dualsg_refined/md/fit_refactor_worklog.md)
-- [项目文件结构.md](/D:/zhangjing/project/Dualsg_refined/md/项目文件结构.md)
+- [椤圭洰鏂囦欢缁撴瀯.md](/D:/zhangjing/project/Dualsg_refined/md/椤圭洰鏂囦欢缁撴瀯.md)
 
-## 当前入口
+## 褰撳墠鍏ュ彛
 
-统一入口：
-
+缁熶竴鍏ュ彛锛?
 - `run.py`
 
-任务到实验类：
-
+浠诲姟鍒板疄楠岀被锛?
 - `fit_num` -> `exp/exp_fit_num.py`
 - `fit_num_with_meta` -> `exp/exp_fit_num.py`
 - `fit_fusion` -> `exp/exp_fit_fusion.py`
 
-任务到模型：
+浠诲姟鍒版ā鍨嬶細
 
 - `Model_Fit_Num` -> `models/model_fit_num.py`
 - `Model_Fit_Num_With_Meta` -> `models/model_fit_num_with_meta.py`
 - `Model_Fit_Fusion` -> `models/model_fit_fusion.py`
 
-任务到数据集：
-
+浠诲姟鍒版暟鎹泦锛?
 - `FIT_Meta` -> `data_provider/data_loader_fit_num_meta.py`
 - `FIT_Fusion` -> `data_provider/data_loader_fit_fusion.py`
 
-## FIT 数据契约
+## FIT 鏁版嵁濂戠害
 
-当前 FIT 数值数据仍然读取：
+褰撳墠 FIT 鏁板€兼暟鎹鍙栵細
 
 - `dataset/FIT_DualSG/fit_dualsg_all.json`
 
-当前文本输入仍然是离线 embedding：
+褰撳墠 `fit_fusion` 鏂囨湰鏁版嵁涔熺洿鎺ユ潵鑷悓涓€涓?json锛?
+- 瀛楁榛樿浣跨敤 `annotations`
 
-- `caption_emb_path -> *.pt`
+涔熷氨鏄锛?
+- `json` 鍐冲畾鏍锋湰椤哄簭銆佹暟鍊煎簭鍒椼€佺洰鏍囧€煎拰鍏冩暟鎹?- `fit_fusion` 涓嶅啀璇?`caption_emb.pt`
 
-也就是说：
-
-- `json` 决定样本顺序、数值序列和 meta
-- `pt` 只在这个顺序上提供每条样本对应的文本 embedding
-
-因此切换长文本、结构化文本、random text、filler text 时：
-
-- 不需要换 `json`
-- 只需要换 `caption_emb_path`
-
-前提是：
-
-- `pt` 的样本数必须和 `fit_dualsg_all.json` 一致
-- 顺序必须严格一致
-
-## 标准化
-
-当前 FIT 默认使用：
-
+## 鏍囧噯鍖?
+褰撳墠 FIT 榛樿浣跨敤锛?
 - `fit_scaler_mode=train_only`
 
-含义：
+鍚箟锛?
+- 鍙敤 train split 鎷熷悎 scaler
+- val / test 澶嶇敤 train-fit scaler
 
-- 只用 train split 拟合 scaler
-- val / test 复用这个 train-fit scaler
-
-这是当前推荐的正式语义。
-
-## 数值流
+## 鏁板€兼祦
 
 ### `fit_num`
 
-链路：
-
+閾捐矾锛?
 `run.py` -> `Exp_Fit_Num` -> `Dataset_DualSG_Fit_Num_Meta` -> `Model_Fit_Num`
 
 ### `fit_num_with_meta`
 
-链路：
-
+閾捐矾锛?
 `run.py` -> `Exp_Fit_Num` -> `Dataset_DualSG_Fit_Num_Meta` -> `Model_Fit_Num_With_Meta`
 
-这是当前 FIT 最强的数值 baseline，也是 fusion 当前复用的 backbone。
-
+杩欐槸褰撳墠 FIT 鏈€寮虹殑鏁板€?baseline锛屼篃鏄?`fit_fusion` 褰撳墠缁х画澶嶇敤鐨?backbone銆?
 ### `Model_Fit_Num_With_Meta`
 
-当前保持原有训练语义不变，只额外提供：
-
+褰撳墠淇濇寔璁粌璇箟涓嶅彉锛屽彧棰濆鎻愪緵锛?
 - `extract_features()`
 
-返回：
-
+杩斿洖锛?
 - `forecast`
 - `encoded_tokens`
 - `summary_state`
 
-这个接口只给 fusion 读取中间特征，不改变数值 baseline 的训练方式。
+鍏朵腑 `fit_fusion v6` 瀹為檯鍙渶瑕?`forecast`銆?
+## 0417 FIT Fusion 涓荤嚎锛歷6
 
-## 0414 FIT Fusion 主线
+### 璁捐鐩爣
 
-### 总体原则
+`v6` 涓嶅啀娌跨敤锛?
+- 绂荤嚎 `caption_emb.pt`
+- deep residual correction family
+- `v3 / v4 / v5` 澶氬垎鏀?active 缁存姢
 
-`0414` 当前已经进入 `v3` 主线。
+鑰屾槸鐩存帴璐磋繎 DualSG 鐨勬寮忛娴嬫柟寮忥細
 
-这里的版本命名约定是：
+1. 鏁板€间富骞插厛杈撳嚭 `y_num`
+2. 鐩存帴璇诲彇 json 涓殑 raw caption 鏂囨湰
+3. 鏂囨湰鍦ㄧ嚎閫佸叆鍐荤粨鐨勬湰鍦版枃鏈紪鐮佹ā鍨?4. 瀵?token hidden 鍋?pooling锛屽緱鍒版枃鏈〃绀?5. 鏂囨湰琛ㄧず鎶曞奖鍒伴娴嬬┖闂达紝寰楀埌 `y_text`
+6. 鍦ㄩ娴嬬┖闂寸洿鎺ヨ瀺鍚堬細
+   - `y_final = (1 - w_t) * y_num + w_t * y_text`
 
-- `v1`：0411 active 结构
-- `v2`：0414 第一轮重写
-- `v3`：0414 第二轮，4 expert routing 结构
-- `v4`：0414 当前 active，DualSG 启发的趋势级 residual 纠偏
+### 鏂囨湰娴?
+褰撳墠 active 鏂囨湰娴侀厤缃細
 
-当前 `Model_Fit_Fusion` 只有两个模式：
+- `text_model_type = gpt2`
+- `text_model_path = ./weights/gpt2`
+- `text_field = annotations`
+- `text_pool_type = avg`
+- `text_max_length = 256`
 
-- `text_mode=direct`
-- `text_mode=residual`
+鏂囨湰缂栫爜妯″瀷锛?
+- 浣跨敤鏈湴 GPT2 tokenizer + GPT2Model
+- 鍏ㄩ儴鍐荤粨锛屼笉鍙備笌璁粌
+- 鍙缁冿細
+  - `caption_proj`
+  - `fusion_weight`
+  - 鏁板€间富骞蹭腑鏈喕缁撶殑鍙傛暟
 
-两者共用：
+### 铻嶅悎鏂瑰紡
 
-- 同一个数值 backbone：`Model_Fit_Num_With_Meta`
-- 同一个共享文本适配器：`caption_emb -> text_proj -> text_ctx`
+褰撳墠 active 铻嶅悎鍙繚鐣欎竴鏉¤矾寰勶細
 
-### 当前关键参数
+- `y_num`锛氭暟鍊间富骞茶緭鍑?- `y_text`锛歳aw text 缁忓喕缁撴枃鏈紪鐮佸櫒鍚庢姇褰卞緱鍒?- `w_t`锛氬舰鐘?`[pred_len, 1]` 鐨勫彲瀛︿範铻嶅悎鏉冮噸锛屽 batch 鍏变韩
 
-当前 0414 主线真正使用的 FIT fusion 参数：
+鏈€缁堬細
 
-- `text_mode`
+- `y_final = (1 - w_t) * y_num + w_t * y_text`
+
+杩欐槸 forecast-space fusion锛屼笉鍐嶅仛 latent-space 娣辫瀺鍚堛€?
+### `disable_text`
+
+褰撳墠浠嶄繚鐣欙細
+
+- `--disable_text`
+
+寮€鍚椂璇箟鍥哄畾涓猴細
+
+- 鐩存帴杩斿洖 `y_num`
+- 鍐荤粨鎵€鏈夐潪鏁板€煎弬鏁?
+鍥犳瀹冧粛鐒舵槸鏈€骞插噣鐨勭函鏁板€煎鐓с€?
+## 褰撳墠 active 鍙傛暟
+
+褰撳墠 `fit_fusion` 鐪熸浣跨敤鐨勫弬鏁帮細
+
 - `num_model_path`
-- `caption_emb_path`
 - `freeze_numerical`
 - `disable_text`
 - `fusion_optimizer_mode`
+- `text_model_path`
+- `text_model_type`
+- `text_field`
+- `text_pool_type`
+- `text_max_length`
 - `lr_num`
 - `lr_text`
 - `weight_decay_text`
-- `text_hidden`
-- `num_experts`
-- `residual_style`
-- `trend_segments`
-- `residual_rank`
 - `num_feat_dim`
 - `fusion_hidden`
 - `fusion_dropout`
 
-## 三代 Fusion 演进
+## 褰撳墠 active 鑴氭湰
 
-这里把我们当前实际讨论过的三代 FIT fusion 结构统一整理一下。
+鏍圭洰褰曞綋鍓嶅彧淇濈暀涓€浠?FIT half-year active fusion 鑴氭湰锛?
+- `fit_fusion_halfyear_v6.sh`
 
-为了避免概念混乱，下面的“三代”按结构思路划分：
-
-1. 第一代：历史旧版浅融合
-   当前在 `0411` 归档里对应 `legacy`
-2. 第二代：0411 shared-context / latent modulation
-   当前在 `0411` 归档里对应 `modern`
-3. 第三代：0414 v2
-   当前 `0414` 活跃主线
-
-### 第一代：历史旧版浅融合
-
-#### direct
-
-结构：
-
-- `caption_emb -> y_text`
-- `y_final = (1 - w) * y_num + w * y_text`
-
-特点：
-
-- 文本分支单独预测一条未来序列
-- 数值主预测 `y_num` 直接进入最终输出
-- `w` 是显式融合权重，可以是固定值，也可以是可学习参数
-
-优点：
-
-- 数值流有强硬保底路径
-- 训练更稳
-- 文本确实有一条独立输出通路，不容易被完全埋掉
-
-缺点：
-
-- 文本参与方式偏浅
-- 文本分支和数值分支只在最后一步相加
-- 交互能力弱，更多像“外挂一个文本头”
-
-#### residual
-
-结构：
-
-- `fusion_in = [caption_emb, phi(y_num.detach()), vol]`
-- 预测 `delta_y` 和 `gain`
-- `y_final = y_num + gain * delta_y`
-
-特点：
-
-- 数值主预测是核心
-- 文本承担纠偏角色
-- `phi(y_num)` 走 `detach`，也就是纠偏头看的数值摘要是固定的
-
-优点：
-
-- 语义清楚，适合讲“文本做纠偏”
-- 相比 direct 更稳
-- 不容易把强数值 baseline 完全带偏
-
-缺点：
-
-- 文本使用仍偏浅
-- 纠偏依赖手工设计的输入拼接
-- `gain / delta` 的控制更像经验型补丁
-
-### 第二代：0411 shared-context / latent modulation
-
-#### direct
-
-结构：
-
-- `caption_emb -> text_adapter -> text_ctx`
-- `text_ctx -> gamma / beta`
-- `gamma / beta` 调制 `encoded_tokens`
-- 再与：
-  - 文本上下文
-  - 调制后的数值摘要
-  - `y_num` 摘要
-  - 历史统计
-  拼成共享上下文
-- `shared_context -> direct_head -> y_final`
-
-特点：
-
-- 文本更早介入数值 backbone 的中间特征
-- final output 不再是显式 `y_num + something`
-- 而是直接从共享上下文重新生成整条预测
-
-优点：
-
-- 表达能力更强
-- 文本和数值的交互更深
-- 理论上更容易捕捉复杂条件依赖
-
-缺点：
-
-- `y_num` 没有显式硬 skip
-- 文本可以被共享上下文里的数值特征淹没
-- 实验上已经被 `random / filler / disable_text` 坐实为“可以绕开文本”
-
-#### residual
-
-结构：
-
-- 同样先构造 shared context
-- `shared_context -> residual_head -> raw_delta`
-- `shared_context -> radius_head -> radius`
-- `delta = radius * tanh(raw_delta)`
-- `y_final = y_num + delta`
-
-特点：
-
-- 形式上还是 residual
-- 但 `delta` 已经主要由 shared context 决定
-- shared context 里包含大量数值侧信息
-
-优点：
-
-- 比 direct 稳
-- 比第一代 residual 有更强的交互表达能力
-- 可以利用 latent、summary、history 等更多上下文
-
-缺点：
-
-- residual 里仍然存在“数值信息过强，文本变弱信号”的问题
-- `delta` 仍可能主要由数值侧决定
-- 这也是为什么第二代 residual 虽然比 direct 好，但仍然没有坐实文本语义贡献
-
-### 第三代：0414 v2
-
-#### direct
-
-结构：
-
-- 数值流：`y_num`
-- 文本流：`caption_emb -> text_proj -> text_ctx -> y_text`
-- `gate_input = [text_ctx, summary_ctx, y_num_ctx, hist_ctx]`
-- `gate = sigmoid(gate_head(gate_input))`
-- `y_final = (1 - gate) * y_num + gate * y_text`
-
-和前两代的区别：
-
-- 保留了第一代 direct 的显式数值 skip
-- 但 gate 不是旧版的单一固定权重，而是逐步预测的动态 gate
-- 文本侧不再只是一个很浅的线性头，也会结合数值摘要来决定融合比例
-
-当前信号：
-
-- `direct_v2` 已经是目前最强的 direct 版本
-- 说明“恢复显式数值 skip”这个方向是对的
-
-#### residual
-
-结构：
-
-- 数值侧只生成 `residual_basis`
-- 文本侧生成：
-  - `text_coeff`
-  - `radius`
-- `delta_raw = sum_k residual_basis[..., k] * text_coeff[..., k]`
-- `delta = radius * tanh(delta_raw)`
-- `y_final = y_num + delta`
-
-和前两代的区别：
-
-- 比第一代 residual 更系统，不再只是把几个特征手工拼起来做一个小头
-- 比第二代 residual 更严格，因为它不允许“纯数值分支直接输出 delta”
-- 文本必须通过系数去选择、组合数值侧 basis
-
-当前信号：
-
-- `residual_v2` 目前在 `MAPE` 上更有优势
-- 但还没有在 `MAE/WAPE` 上明显压过 `direct_v2`
-- 也就是说，这版 residual 的结构约束更合理，但训练效果还没有完全兑现
-
-### 第三代当前实验信号
-
-到目前为止，第三代已经完成了以下 half-year 控制：
-
-- `real long text`
-- `disable_text`
-- `filler text`
-- `random text`
-
-当前最重要的观察不是“哪组数值更低一点”，而是这些控制之间的相对关系。
-
-#### direct_v2
-
-目前已知结果：
-
-- real:
-  - `MAE = 0.079404`
-  - `MAPE = 29.18%`
-  - `WAPE = 17.13%`
-- disable:
-  - `MAE = 0.080189`
-  - `MAPE = 28.75%`
-  - `WAPE = 17.30%`
-- filler:
-  - `MAE = 0.079494`
-  - `MAPE = 29.26%`
-  - `WAPE = 17.15%`
-- random:
-  - `MAE = 0.079525`
-  - `MAPE = 29.33%`
-  - `WAPE = 17.16%`
-
-解读：
-
-- `direct_v2` 已经明显比第二代 direct 稳
-- 但 real / filler / random 非常接近
-- 因而目前还不能说 `direct_v2` 已经有效利用了文本语义
-- 更准确地说，它更像是“带文本分支的稳定双流融合”，而不是“文本语义被明确用起来了”
-
-#### residual_v2
-
-目前已知结果：
-
-- real:
-  - `MAE = 0.079863`
-  - `MAPE = 28.60%`
-  - `WAPE = 17.23%`
-- disable:
-  - `MAE = 0.080189`
-  - `MAPE = 28.75%`
-  - `WAPE = 17.30%`
-- filler:
-  - `MAE = 0.079827`
-  - `MAPE = 28.72%`
-  - `WAPE = 17.22%`
-- random:
-  - `MAE = 0.079860`
-  - `MAPE = 28.65%`
-  - `WAPE = 17.23%`
-
-解读：
-
-- `residual_v2` 在结构上已经比第二代更接近真正的文本纠偏器
-- 但结果上 real / filler / random / disable_text 仍然几乎重合
-- 这意味着“文本必须出现在公式里”还不等于“文本内容差异被模型真正利用”
-
-因此第三代当前最准确的架构结论是：
-
-- 它比第二代更稳、更干净
-- 但仍然没有形成我们希望看到的语义排序：
-  - `real > filler > random > disable`
-- 所以下一步重点不应该是继续堆 prompt，而应该是继续改 residual 结构，让文本内容真正决定纠偏策略
-
-### 第四代：0414 v3
-
-第四代就是当前正在运行的 active 结构。
-
-它不是对 v2 的小修小补，而是进一步把“文本参与预测”改成“文本选择预测/纠偏模式”。
-
-#### direct_v3
-
-结构：
-
-- 数值流输出 `y_num`
-- 文本流先输出 4 个候选文本预测
-- 文本路由把 4 个候选混合成 `y_text`
-- 再由逐步 gate 做显式融合：
-  - `y_final = (1 - gate) * y_num + gate * y_text`
-
-和 v2 的区别：
-
-- v2 只有一个 `y_text`
-- v3 让文本侧内部先形成多个候选模式，再做路由
-
-这样做的目标是：
-
-- 保留 v2 direct 已经验证过的稳定性
-- 同时给文本侧更多表达不同预测模式的能力
-
-#### residual_v3
-
-结构：
-
-- 数值流输出 `y_num`
-- 数值侧同时输出 4 个候选纠偏 expert
-- 文本侧输出：
-  - 4 个 expert 的逐步路由权重
-  - 逐步纠偏幅度 `radius`
-- 最终：
-  - `delta_mix = sum_k route_k * delta_k`
-  - `delta = radius * tanh(delta_mix)`
-  - `y_final = y_num + delta`
-
-和 v2 的区别：
-
-- v2 更像“数值 basis + 文本系数”
-- v3 更像“数值候选纠偏模式 + 文本路由选择”
-
-这样做的目标是：
-
-- 继续保持 residual 路径里不存在“纯数值直接输出最终 delta”的旁路
-- 让不同文本更容易触发不同的纠偏模式
-
-#### v3 的工程改动
-
-除了结构变化，v3 还改了日志层：
-
-- `fit_fusion` 不再打印模型总参数量
-- 改成只打印当前 optimizer 里真正会更新的参数
-
-这件事对 direct / residual 特别重要，因为两条路径本来就不该更新同样多的参数。
-
-#### v3 当前实验信号
-
-目前 half-year 第一轮结果：
-
-- `direct_v3 + ckpt + unfreeze`
-  - `MAE = 0.079424`
-  - `MAPE = 29.03%`
-  - `WAPE = 17.13%`
-- `residual_v3 + ckpt + unfreeze`
-  - `MAE = 0.079695`
-  - `MAPE = 28.79%`
-  - `WAPE = 17.19%`
-
-这说明：
-
-- `direct_v3` 基本延续了 `direct_v2` 的稳定性
-- `residual_v3` 相比 `v2 residual`，在 `MAE / WAPE` 上有小幅进步
-- 但 `residual_v3` 目前仍没有整体压过 `direct_v3`
-
-因此第四代当前的最准确判断是：
-
-- 4 个候选 expert 的路由设计带来了有限增量
-- 但还不足以证明“文本内容差异已经明显影响了纠偏策略”
-
-所以第四代没有继续沿着 `v3` 去补完整控制实验，而是进入 `v4 residual`：
-
-- 保留 `direct_v3` 作为稳定基线
-- 只重写 residual
-- 让文本只做 forecast-space 的趋势级纠偏
-
-## 四代 direct / residual 的本质区别
-
-一句话概括：
-
-- 第一代：文本在输出端浅融合，稳定，但浅
-- 第二代：文本更早进入 latent，表达更强，但容易被绕开
-- 第三代：尝试把第一代的稳定性和第二代的结构表达结合起来
-
-如果拆成 direct / residual 两条线看：
-
-### direct 的四代变化
-
-第一代：
-
-- 强显式 skip
-- 文本单独预测
-- 浅融合
-
-第二代：
-
-- 去掉显式 skip
-- 改成 shared-context 重建整条序列
-- 更灵活，但最容易失稳和绕开文本
-
-第三代：
-
-- 把显式 skip 加回来
-- 同时把融合权重升级成 step-wise dynamic gate
-
-第四代：
-
-- 继续沿用第三代 `direct_v3`
-- 不再继续复杂化 direct
-- 让 direct 维持稳定、可解释的双流基线角色
-
-### residual 的四代变化
-
-第一代：
-
-- 文本做一个小纠偏头
-- 稳定、直观，但表达偏浅
-
-第二代：
-
-- 纠偏建立在 shared context 上
-- 表达变强，但仍然可能主要依赖数值侧
-
-第三代：
-
-- 数值只提供 basis
-- 文本必须提供组合系数和幅度控制
-- 从结构上更强调“文本参与纠偏”
-
-第四代：
-
-- 不再做高频 routing residual
-- 文本先读取数值趋势上下文
-- 然后只输出低频、分段常数的趋势纠偏
-- 把文本作用收缩到它最擅长的方向、强度和阶段变化
-
-## Direct v3
-
-### 设计目标
-
-`direct_v3` 是一条可解释的双流基线。
-
-它不追求一定强于 residual，但必须满足两点：
-
-1. 文本流单独生成预测
-2. 数值主预测 `y_num` 显式进入最终输出
-
-### 结构
-
-数值流：
-
-- 数值 backbone 输出 `y_num`
-
-文本流：
-
-- `caption_emb -> text_proj -> text_ctx`
-- `text_ctx -> 4 个 direct experts`
-- `route_input = [text_ctx, summary_ctx, y_num_ctx, hist_ctx]`
-- `route = softmax(direct_text_router_head(route_input))`
-- `y_text = sum_k route_k * expert_k`
-
-融合门控：
-
-- `gate_input = [text_ctx, summary_ctx, y_num_ctx, hist_ctx]`
-- `gate = sigmoid(direct_gate_head(gate_input))`
-
-最终输出：
-
-- `y_final = (1 - gate) * y_num + gate * y_text`
-
-其中：
-
-- `gate` 是逐步预测的 `[B, pred_len, C]`
-- 不是全局标量
-
-### 当前含义
-
-这条路保留了强显式数值 skip，并且给文本侧增加了多个候选预测模式。
-
-因此：
-
-- 即使文本流还不够强
-- `direct_v3` 也不会像第二代那样把 `y_num` 埋进大 MLP 导致失稳
-
-## Residual v3
-
-### 设计目标
-
-`residual_v3` 是当前主方法。
-
-它的目标不是“再做一个纯数值纠偏器”，而是：
-
-- 数值侧只生成多个候选纠偏 expert
-- 文本侧必须提供逐步 expert 路由和纠偏幅度控制
-
-这样能在结构上避免“只靠数值侧就把 delta 直接算出来”的旁路。
-
-### 结构
-
-主预测：
-
-- 数值 backbone 输出 `y_num`
-
-数值侧上下文：
-
-- `encoded_tokens`
-- `summary_state`
-- `y_num`
-- `hist_stats`
-
-数值侧候选纠偏：
-
-- `basis_input = [encoded_ctx, summary_ctx, y_num_ctx, hist_ctx]`
-- `residual_experts = residual_expert_head(basis_input)`
-- reshape 为 `[B, pred_len, C, K]`
-
-文本侧控制与路由：
-
-- `text_ctx = text_proj(caption_emb)`
-- `route = softmax(residual_text_router_head(text_ctx))`
-- reshape 为 `[B, pred_len, K]`
-
-纠偏幅度：
-
-- `radius_input = [text_ctx, hist_ctx]`
-- `radius = sigmoid(residual_radius_head(radius_input))`
-
-最终纠偏：
-
-- `delta_mix = sum_k residual_experts[..., k] * route[..., k]`
-- `delta = radius * tanh(delta_mix)`
-- `y_final = y_num + delta`
-
-### 当前约束
-
-当前 residual 里不存在：
-
-- “纯数值 MLP 直接输出 `delta`” 的路径
-
-也就是说：
-
-- 如果没有文本系数
-- residual experts 不能自己变成最终纠偏量
-
-## Residual v4
-
-### 设计目标
-
-`residual_v4` 的目标不是继续增加 residual 路由复杂度，而是借鉴 DualSG，把文本流收缩成一个**趋势级 forecast-space correction**。
-
-核心原则：
-
-1. 数值流继续负责主预测和高频细节
-2. 文本流不再尝试控制完整高频 `delta`
-3. 文本先读取当前数值趋势上下文，再输出低频趋势纠偏
-
-### 结构
-
-主预测：
-
-- 数值 backbone 输出 `y_num`
-
-数值趋势上下文：
-
-- `encoded_ctx`
-- `summary_ctx`
-- `y_num_ctx`
-- `hist_ctx`
-
-先拼成：
-
-- `trend_input = [encoded_ctx, summary_ctx, y_num_ctx, hist_ctx]`
-
-然后：
-
-- `num_trend_ctx = residual_v4_num_trend_proj(trend_input)`
-
-文本侧：
-
-- `caption_emb -> text_proj -> text_ctx`
-
-文本先调制数值趋势上下文：
-
-- `gamma = tanh(text_gamma(text_ctx))`
-- `beta = text_beta(text_ctx)`
-- `aligned_trend_ctx = LN(num_trend_ctx * (1 + gamma) + beta)`
-
-然后基于：
-
-- `aligned_trend_ctx`
-- `text_ctx`
-- `hist_ctx`
-
-共同预测：
-
-- `delta_segments`
-- `segment_gate`
-
-最终：
-
-- `delta_segments = segment_gate * tanh(delta_segments)`
-- `delta = piecewise_constant_expand(delta_segments)`
-- `y_final = y_num + delta`
-
-### 与 v3 的关键差异
-
-`v3 residual`：
-
-- 更像“文本给若干 expert 做路由”
-
-`v4 residual`：
-
-- 更像“文本先理解当前数值趋势，再给低频趋势修正”
-
-也就是说：
-
-- `v3` 仍然有较强的模式选择味道
-- `v4` 则直接把文本职责收缩成趋势语义纠偏
-
-### 当前 active 脚本
-
-当前 half-year active fusion 入口：
-
-- [fit_fusion_halfyear_direct_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v3.sh)
-- [fit_fusion_halfyear_residual_v5.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v5.sh)
-
-其中：
-
-- `direct_v3` 是稳定基线
-- `residual_v5` 是当前 residual 主方法
-
-当前第一轮结果：
-
-- `direct_v3 + ckpt + unfreeze`
-  - `MAE = 0.079424`
-  - `MAPE = 29.03%`
-  - `WAPE = 17.13%`
-- `residual_v4 + ckpt + unfreeze`
-  - `MAE = 0.079641`
-  - `MAPE = 28.56%`
-  - `WAPE = 17.18%`
-
-当前判断：
-
-- `residual_v4` 相比 `residual_v3` 有小幅改善
-- 但还没有在 `MAE / WAPE` 上超过 `direct_v3`
-- 因此 `v4` 说明方向更合理了，但结构还需要继续增强
-
-## Residual v5
-
-### 设计目标
-
-`residual_v5` 继续保留 `v4` 的趋势级、分段常数 forecast-space correction 思路，但进一步强化“文本在具体数值状态下决定纠偏策略”。
-
-核心变化：
-
-1. 文本不再只调制一个全局趋势上下文
-2. 文本带着分段 query 去读数值 patch memory
-3. 再从 text-aligned segment context 生成 segment-level correction
-
-### 结构
-
-数值 patch memory：
-
-- `encoded_tokens -> mean over variables -> trend_memory`
-- `trend_memory -> key / value`
-
-文本 query：
-
-- `caption_emb -> text_proj -> text_ctx`
-- `text_ctx -> text_query`
-
-分段 query：
-
-- `segment_query = learnable_segment_query + text_query`
-
-然后每个 segment query 对 patch memory 做注意力，得到：
-
-- `segment_ctx`
-
-再基于：
-
-- `segment_ctx`
-- `text_ctx`
-- `summary_ctx`
-- `hist_ctx`
-
-分别预测：
-
-- `trend_basis`
-- `coeff`
-- `radius`
-
-最终：
-
-- `delta_segments = radius * tanh(sum_k basis_k * coeff_k)`
-- `delta = piecewise_constant_expand(delta_segments)`
-- `y_final = y_num + delta`
-
-## Disable Text
-
-参数：
-
-- `--disable_text`
-
-当前语义是：
-
-- 直接返回数值预测 `y_num`
-- 冻结所有非数值参数
-
-因此它是一个严格的纯数值对照。
-
-## 当前脚本入口
-
-当前 0414 活跃的 FIT half-year fusion 脚本是：
-
-- [fit_fusion_halfyear_direct_v3.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_direct_v3.sh)
-- [fit_fusion_halfyear_residual_v5.sh](/D:/zhangjing/project/Dualsg_refined/fit_fusion_halfyear_residual_v5.sh)
-
-首轮固定配置：
-
-- `half-year`
-- `real long text = ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt`
-- `num_model_path = ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth`
-- `unfreeze numerical`
-- `train_epochs = 20`
-- `patience = 100`
-- `adjust = 0`
-- `fusion_optimizer_mode = split`
-- `fit_scaler_mode = train_only`
-- `num_experts = 4`
-
-## 0411 归档和 0414 主线的关系
-
-`0411` 已经完成的事情：
-
-- modern / legacy 结构诊断
-- random / filler / disable_text 控制实验
-- structured / multi-view 文本诊断
-- 旧脚本归档
-
-`0414` 的定位是：
-
-- 不再继续堆旧结构实验
-- 直接进入一套更干净的新主线
-- 重点不是“换更多 prompt”
-- 而是“从结构上减少文本被绕开的可能性”
-
-当前进一步收紧为：
-
-- 不只是减少文本被绕开
-- 而是尽量让“文本内容不同”也会导致不同的路由和纠偏模式
-
-
+鏃х殑 `v2-v5` half-year / one-year fusion 鑴氭湰宸茬粡浠?active 鏍圭洰褰曠Щ闄わ紝涓嶅啀浣滀负褰撳墠瀹為獙鍏ュ彛銆?

@@ -296,3 +296,14 @@ def load_fit_caption_embeddings(caption_emb_path, sample_indices):
         )
 
     return full_emb[sample_indices].float()
+
+
+def load_fit_text_field(root_path, data_path, sample_indices, text_field="annotations"):
+    """按 sample_indices 读取 FIT 原始文本字段。"""
+    full_data = load_fit_json(root_path, data_path)
+    texts = []
+    for index in sample_indices:
+        item = full_data[index]
+        value = item.get(text_field, "")
+        texts.append("" if value is None else str(value))
+    return texts
