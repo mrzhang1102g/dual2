@@ -7,6 +7,7 @@ import warnings
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn.parameter import UninitializedBuffer, UninitializedParameter
 from torch import optim
 from tqdm import tqdm
 
@@ -39,13 +40,21 @@ class Exp_Fit_Num_Semantic(Exp_Basic):
         model = self.model_dict[args.model](args).float()
         pretrained_path = getattr(args, "pretrained_num_model_path", "")
         if pretrained_path:
-            checkpoint = torch.load(pretrained_path, map_location="cpu")
+            checkpoint = torch.load(pretrained_path, map_location="cpu", weights_only=False)
             model_state = model.state_dict()
-            matched_state = {
-                key: value
-                for key, value in checkpoint.items()
-                if key in model_state and model_state[key].shape == value.shape
-            }
+            matched_state = {}
+            for key, value in checkpoint.items():
+                if key not in model_state:
+                    continue
+
+                target_param = model_state[key]
+                if isinstance(target_param, (UninitializedParameter, UninitializedBuffer)):
+                    matched_state[key] = value
+                    continue
+
+                if tuple(target_param.shape) == tuple(value.shape):
+                    matched_state[key] = value
+
             model_state.update(matched_state)
             model.load_state_dict(model_state)
             self.log(
