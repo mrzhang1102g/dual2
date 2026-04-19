@@ -20,6 +20,7 @@ from utils.logger import log
 # FIT datasets
 # ===============================================================
 from data_provider.data_loader_fit_num_meta import Dataset_DualSG_Fit_Num_Meta
+from data_provider.data_loader_fit_num_meta_semantic import Dataset_DualSG_Fit_Num_Meta_Semantic
 from data_provider.data_loader_fit_fusion import Dataset_DualSG_Fit_Fusion
 
 # ===============================================================
@@ -35,6 +36,7 @@ from data_provider.data_loader_geo_fusion import Dataset_DualSG_Geo_Fusion
 data_dict = {
     # FIT
     'FIT_Meta': Dataset_DualSG_Fit_Num_Meta,
+    'FIT_Meta_Semantic': Dataset_DualSG_Fit_Num_Meta_Semantic,
     'FIT_Fusion': Dataset_DualSG_Fit_Fusion,
 
     # GeoStyle
@@ -129,6 +131,28 @@ def data_provider(args, flag):
             test_ratio=getattr(args, "test_ratio", 0.2),
             max_samples=split_limit,
             fit_scaler_mode=getattr(args, "fit_scaler_mode", "train_only"),
+        )
+
+    # ===========================================================
+    # FIT Meta + Semantic Supervision
+    # ===========================================================
+    elif args.data == 'FIT_Meta_Semantic':
+        data_set = Dataset_DualSG_Fit_Num_Meta_Semantic(
+            root_path=args.root_path,
+            data_path=args.data_path,
+            flag=flag,
+            size=[args.seq_len, args.label_len, args.pred_len],
+            features=args.features,
+            target=args.target,
+            scale=args.scale,
+            timeenc=timeenc,
+            freq=freq,
+            train_ratio=getattr(args, "train_ratio", 0.7),
+            val_ratio=getattr(args, "val_ratio", 0.1),
+            test_ratio=getattr(args, "test_ratio", 0.2),
+            max_samples=split_limit,
+            fit_scaler_mode=getattr(args, "fit_scaler_mode", "train_only"),
+            text_field=getattr(args, "semantic_text_field", "annotations"),
         )
 
     # ===========================================================

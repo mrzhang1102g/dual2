@@ -9,6 +9,7 @@ import torch
 
 from exp.exp_fit_fusion import Exp_Fit_Fusion
 from exp.exp_fit_num import Exp_Fit_Num
+from exp.exp_fit_num_semantic import Exp_Fit_Num_Semantic
 from exp.exp_geo_fusion import Exp_Geo_Fusion
 from exp.exp_geo_num import Exp_Geo_Num
 from utils.logger import log
@@ -200,6 +201,14 @@ def add_geo_args(parser):
     parser.add_argument("--use_group", action="store_true")
 
 
+def add_semantic_args(parser):
+    parser.add_argument("--semantic_text_field", type=str, default="annotations")
+    parser.add_argument("--semantic_hidden", type=int, default=64)
+    parser.add_argument("--semantic_dropout", type=float, default=0.1)
+    parser.add_argument("--semantic_loss_weight", type=float, default=0.2)
+    parser.add_argument("--pretrained_num_model_path", type=str, default="")
+
+
 def add_output_args(parser):
     parser.add_argument("--visualize", type=str2bool, default=False)
     parser.add_argument("--output_dir", type=str, default="./model_outputs/")
@@ -216,6 +225,7 @@ def build_parser():
     add_device_args(parser)
     add_fusion_args(parser)
     add_geo_args(parser)
+    add_semantic_args(parser)
     add_output_args(parser)
     return parser
 
@@ -290,6 +300,7 @@ def get_exp_class(task_name):
     exp_map = {
         "fit_num": Exp_Fit_Num,
         "fit_num_with_meta": Exp_Fit_Num,
+        "fit_num_with_meta_semantic": Exp_Fit_Num_Semantic,
         "fit_fusion": Exp_Fit_Fusion,
         "geo_num": Exp_Geo_Num,
         "geo_num_with_meta": Exp_Geo_Num,

@@ -1,165 +1,182 @@
-﻿# FIT 鏋舵瀯鏂囨。
+# FIT 架构文档
 
-鏈€鍚庢洿鏂帮細2026-04-17
+最后更新：2026-04-19
 
-## 鏂囨。瀹氫綅
+## 文档定位
 
-杩欎唤鏂囨。鍙弿杩板綋鍓?`0417` 鍒嗘敮閲?FIT 鐨?active 瀹炵幇銆?
-鍘嗗彶闃舵璇存槑锛?
-- `0411`锛氳瘖鏂笌褰掓。鍒嗘敮锛岄獙璇佷簡 `random / filler / disable_text` 瀵规棫 fusion 鐨勫奖鍝?- `0414`锛歚v2-v5` 缁撴瀯閲嶅啓鍒嗘敮锛岄獙璇佷簡澶氱増 residual 鏀归€犵殑涓婇檺
+这份文档描述当前 `0417` 分支里 FIT 的 active 实现和实验主线。
 
-鏃у疄楠屽拰鑴氭湰蹇収浠嶄繚鐣欏湪锛?
-- [fit_halfyear_0411_manifest.md](/D:/zhangjing/project/Dualsg_refined/md/fit_halfyear_0411_manifest.md)
-- [scripts_archive/fit_halfyear_0411/README.md](/D:/zhangjing/project/Dualsg_refined/scripts_archive/fit_halfyear_0411/README.md)
+历史阶段：
+- `0411`：embedding-fusion 诊断与归档
+- `0414`：`v2-v5` residual/direct 结构重写
+- `0417-v6`：DualSG-style raw-text fusion 尝试，结果已证明不如强数值 baseline
 
-閰嶅鏂囨。锛?
-- [fit_server_runbook.md](/D:/zhangjing/project/Dualsg_refined/md/fit_server_runbook.md)
-- [fit_refactor_worklog.md](/D:/zhangjing/project/Dualsg_refined/md/fit_refactor_worklog.md)
-- [椤圭洰鏂囦欢缁撴瀯.md](/D:/zhangjing/project/Dualsg_refined/md/椤圭洰鏂囦欢缁撴瀯.md)
+历史脚本和结果快照仍然保留在：
+- [D:\zhangjing\project\Dualsg_refined\md\fit_halfyear_0411_manifest.md](D:/zhangjing/project/Dualsg_refined/md/fit_halfyear_0411_manifest.md)
+- [D:\zhangjing\project\Dualsg_refined\scripts_archive\fit_halfyear_0411\README.md](D:/zhangjing/project/Dualsg_refined/scripts_archive/fit_halfyear_0411/README.md)
 
-## 褰撳墠鍏ュ彛
+## 当前主线
 
-缁熶竴鍏ュ彛锛?
-- `run.py`
+当前 FIT 的改进主线已经从“文本作为输入模态做融合”切换成：
 
-浠诲姟鍒板疄楠岀被锛?
-- `fit_num` -> `exp/exp_fit_num.py`
-- `fit_num_with_meta` -> `exp/exp_fit_num.py`
-- `fit_fusion` -> `exp/exp_fit_fusion.py`
+- 数值主干继续负责预测
+- 结构化文本只提供语义监督
+- 用多任务学习约束数值表示学习
 
-浠诲姟鍒版ā鍨嬶細
+当前 active 任务：
+- `fit_num`
+- `fit_num_with_meta`
+- `fit_num_with_meta_semantic`
+- `fit_fusion`
 
-- `Model_Fit_Num` -> `models/model_fit_num.py`
-- `Model_Fit_Num_With_Meta` -> `models/model_fit_num_with_meta.py`
-- `Model_Fit_Fusion` -> `models/model_fit_fusion.py`
+其中当前最值得继续推进的是：
+- `fit_num_with_meta_semantic`
 
-浠诲姟鍒版暟鎹泦锛?
-- `FIT_Meta` -> `data_provider/data_loader_fit_num_meta.py`
-- `FIT_Fusion` -> `data_provider/data_loader_fit_fusion.py`
+## 数据契约
 
-## FIT 鏁版嵁濂戠害
+### 纯数值 / 数值+Meta
 
-褰撳墠 FIT 鏁板€兼暟鎹鍙栵細
-
+仍然使用：
 - `dataset/FIT_DualSG/fit_dualsg_all.json`
 
-褰撳墠 `fit_fusion` 鏂囨湰鏁版嵁涔熺洿鎺ユ潵鑷悓涓€涓?json锛?
-- 瀛楁榛樿浣跨敤 `annotations`
+### 语义监督
 
-涔熷氨鏄锛?
-- `json` 鍐冲畾鏍锋湰椤哄簭銆佹暟鍊煎簭鍒椼€佺洰鏍囧€煎拰鍏冩暟鎹?- `fit_fusion` 涓嶅啀璇?`caption_emb.pt`
+默认使用：
+- `dataset/FIT_DualSG/fit_dualsg_structured.json`
 
-## 鏍囧噯鍖?
-褰撳墠 FIT 榛樿浣跨敤锛?
+说明：
+- 这份文件当前不一定会提交到仓库，但脚本和代码默认按它的路径读取
+- `annotations` 应该是结构化趋势描述，推荐是 json 字符串或字典
+
+当前语义解析器支持从 `annotations` 中提取 4 类监督标签：
+- `overall_trend`
+- `recent_regime` 或 `recent_trend`
+- `volatility`
+- `major_turning_points`
+
+即使只有部分字段，代码也会通过 `mask` 机制自动跳过缺失标签。
+
+## 标准化
+
+当前 FIT 默认使用：
 - `fit_scaler_mode=train_only`
 
-鍚箟锛?
-- 鍙敤 train split 鎷熷悎 scaler
-- val / test 澶嶇敤 train-fit scaler
+含义：
+- 只用 train split 拟合 scaler
+- val / test 复用 train-fit scaler
 
-## 鏁板€兼祦
+## 数值主干
 
 ### `fit_num`
 
-閾捐矾锛?
-`run.py` -> `Exp_Fit_Num` -> `Dataset_DualSG_Fit_Num_Meta` -> `Model_Fit_Num`
+链路：
+- `run.py`
+- `exp/exp_fit_num.py`
+- `data_provider/data_loader_fit_num_meta.py`
+- `models/model_fit_num.py`
 
 ### `fit_num_with_meta`
 
-閾捐矾锛?
-`run.py` -> `Exp_Fit_Num` -> `Dataset_DualSG_Fit_Num_Meta` -> `Model_Fit_Num_With_Meta`
+链路：
+- `run.py`
+- `exp/exp_fit_num.py`
+- `data_provider/data_loader_fit_num_meta.py`
+- `models/model_fit_num_with_meta.py`
 
-杩欐槸褰撳墠 FIT 鏈€寮虹殑鏁板€?baseline锛屼篃鏄?`fit_fusion` 褰撳墠缁х画澶嶇敤鐨?backbone銆?
-### `Model_Fit_Num_With_Meta`
+这是当前 FIT 最强的纯数值 baseline。
 
-褰撳墠淇濇寔璁粌璇箟涓嶅彉锛屽彧棰濆鎻愪緵锛?
-- `extract_features()`
+## 0417 语义监督主线
 
-杩斿洖锛?
+### 目标
+
+不再把文本作为输入模态去和强数值 backbone 做 late fusion，而是把结构化文本转成语义标签，监督数值模型学习更有判别力的趋势表示。
+
+### 当前任务
+
+任务名：
+- `fit_num_with_meta_semantic`
+
+数据集：
+- `FIT_Meta_Semantic`
+
+模型：
+- `Model_Fit_Num_With_Meta_Semantic`
+
+训练类：
+- `exp/exp_fit_num_semantic.py`
+
+### 模型结构
+
+数值主干完全复用：
+- [D:\zhangjing\project\Dualsg_refined\models\model_fit_num_with_meta.py](D:/zhangjing/project/Dualsg_refined/models/model_fit_num_with_meta.py)
+
+新模型只是在 `summary_state` 上增加一个很薄的语义监督头：
+- `semantic_trunk`
+- `overall_head`
+- `recent_head`
+- `volatility_head`
+- `turning_head`
+
+主预测输出仍然是：
 - `forecast`
-- `encoded_tokens`
-- `summary_state`
 
-鍏朵腑 `fit_fusion v6` 瀹為檯鍙渶瑕?`forecast`銆?
-## 0417 FIT Fusion 涓荤嚎锛歷6
+辅助输出是：
+- `semantic_logits["overall"]`
+- `semantic_logits["recent"]`
+- `semantic_logits["volatility"]`
+- `semantic_logits["turning"]`
 
-### 璁捐鐩爣
+### 语义任务定义
 
-`v6` 涓嶅啀娌跨敤锛?
-- 绂荤嚎 `caption_emb.pt`
-- deep residual correction family
-- `v3 / v4 / v5` 澶氬垎鏀?active 缁存姢
+当前 4 个辅助任务：
+- `overall_trend`：3 类，`falling / stable / rising`
+- `recent_regime`：3 类，`falling / stable / rising`
+- `volatility`：3 类，`low / moderate / high`
+- `major_turning_points`：4 类，`none / early / middle / late`
 
-鑰屾槸鐩存帴璐磋繎 DualSG 鐨勬寮忛娴嬫柟寮忥細
+### 损失函数
 
-1. 鏁板€间富骞插厛杈撳嚭 `y_num`
-2. 鐩存帴璇诲彇 json 涓殑 raw caption 鏂囨湰
-3. 鏂囨湰鍦ㄧ嚎閫佸叆鍐荤粨鐨勬湰鍦版枃鏈紪鐮佹ā鍨?4. 瀵?token hidden 鍋?pooling锛屽緱鍒版枃鏈〃绀?5. 鏂囨湰琛ㄧず鎶曞奖鍒伴娴嬬┖闂达紝寰楀埌 `y_text`
-6. 鍦ㄩ娴嬬┖闂寸洿鎺ヨ瀺鍚堬細
-   - `y_final = (1 - w_t) * y_num + w_t * y_text`
+总损失：
+- `L = L_forecast + λ * L_semantic`
 
-### 鏂囨湰娴?
-褰撳墠 active 鏂囨湰娴侀厤缃細
+其中：
+- `L_forecast`：沿用原数值任务损失，默认 `MAE`
+- `L_semantic`：4 个分类任务交叉熵的均值
+- `λ = semantic_loss_weight`
 
-- `text_model_type = gpt2`
-- `text_model_path = ./weights/gpt2`
-- `text_field = annotations`
-- `text_pool_type = avg`
-- `text_max_length = 256`
+缺失标签通过 `mask` 跳过，不会强行参与损失。
 
-鏂囨湰缂栫爜妯″瀷锛?
-- 浣跨敤鏈湴 GPT2 tokenizer + GPT2Model
-- 鍏ㄩ儴鍐荤粨锛屼笉鍙備笌璁粌
-- 鍙缁冿細
-  - `caption_proj`
-  - `fusion_weight`
-  - 鏁板€间富骞蹭腑鏈喕缁撶殑鍙傛暟
+### 主干初始化
 
-### 铻嶅悎鏂瑰紡
+当前支持：
+- `pretrained_num_model_path`
 
-褰撳墠 active 铻嶅悎鍙繚鐣欎竴鏉¤矾寰勶細
+用途：
+- 先加载强数值 baseline 的 checkpoint
+- 再在其基础上增加语义监督进行微调
 
-- `y_num`锛氭暟鍊间富骞茶緭鍑?- `y_text`锛歳aw text 缁忓喕缁撴枃鏈紪鐮佸櫒鍚庢姇褰卞緱鍒?- `w_t`锛氬舰鐘?`[pred_len, 1]` 鐨勫彲瀛︿範铻嶅悎鏉冮噸锛屽 batch 鍏变韩
+这比完全从零训练更符合当前项目实际情况。
 
-鏈€缁堬細
+## 0417 v6 raw-text fusion
 
-- `y_final = (1 - w_t) * y_num + w_t * y_text`
+`v6` 仍保留在代码里作为历史尝试，但已经不是推荐主线。
 
-杩欐槸 forecast-space fusion锛屼笉鍐嶅仛 latent-space 娣辫瀺鍚堛€?
-### `disable_text`
+核心思路：
+- 直接从 json 里读取 raw text
+- 冻结 GPT2
+- pooling 后投影到预测空间
+- 与 `y_num` 做 forecast-space 融合
 
-褰撳墠浠嶄繚鐣欙細
+当前结论：
+- 这条路线结果明显差于强数值 baseline 和 `direct_v3`
+- 不建议继续在这条路线上投入主要精力
 
-- `--disable_text`
+## 当前 active 脚本
 
-寮€鍚椂璇箟鍥哄畾涓猴細
-
-- 鐩存帴杩斿洖 `y_num`
-- 鍐荤粨鎵€鏈夐潪鏁板€煎弬鏁?
-鍥犳瀹冧粛鐒舵槸鏈€骞插噣鐨勭函鏁板€煎鐓с€?
-## 褰撳墠 active 鍙傛暟
-
-褰撳墠 `fit_fusion` 鐪熸浣跨敤鐨勫弬鏁帮細
-
-- `num_model_path`
-- `freeze_numerical`
-- `disable_text`
-- `fusion_optimizer_mode`
-- `text_model_path`
-- `text_model_type`
-- `text_field`
-- `text_pool_type`
-- `text_max_length`
-- `lr_num`
-- `lr_text`
-- `weight_decay_text`
-- `num_feat_dim`
-- `fusion_hidden`
-- `fusion_dropout`
-
-## 褰撳墠 active 鑴氭湰
-
-鏍圭洰褰曞綋鍓嶅彧淇濈暀涓€浠?FIT half-year active fusion 鑴氭湰锛?
+当前和 0417 新方向直接相关的脚本：
+- `fit_halfyear_num_with_meta.sh`
+- `fit_halfyear_num_with_meta_semantic_v1.sh`
 - `fit_fusion_halfyear_v6.sh`
 
-鏃х殑 `v2-v5` half-year / one-year fusion 鑴氭湰宸茬粡浠?active 鏍圭洰褰曠Щ闄わ紝涓嶅啀浣滀负褰撳墠瀹為獙鍏ュ彛銆?
+其中现在更推荐优先跑：
+- `fit_halfyear_num_with_meta_semantic_v1.sh`

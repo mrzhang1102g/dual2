@@ -12,7 +12,6 @@ from tqdm import tqdm
 
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
-from models.model_fit_fusion import Model_Fit_Fusion as FusionModel
 from utils.metrics import metric
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
 
@@ -27,6 +26,8 @@ class Exp_Fit_Fusion(Exp_Basic):
         super().__init__(args)
 
     def _build_model(self, args):
+        from models.model_fit_fusion import Model_Fit_Fusion as FusionModel
+
         num_ckpt = getattr(args, "num_model_path", None)
         self.log(f"num_ckpt: {num_ckpt}")
         self.log(f"disable_text: {getattr(args, 'disable_text', False)}")

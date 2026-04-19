@@ -1,10 +1,11 @@
 """
-FIT 数据集公共工具。
+Shared FIT dataset utilities.
 
-职责：
-1. 统一 FIT 数值流 / 融合流的数据解析逻辑，避免多个 loader 重复维护。
-2. 提供默认关闭的小样本裁剪能力，方便本地 CPU smoke。
-3. 统一管理 FIT 的标准化策略，默认采用 train-only scaler。
+Responsibilities:
+- unify FIT numeric / fusion loader parsing logic
+- provide optional local smoke sample limits
+- manage FIT scaling strategy
+- parse structured annotations into semantic supervision labels
 """
 
 import json
@@ -43,6 +44,25 @@ AGE_MAP = {
     "age_gt_40": 3,
 }
 
+TREND_LABEL_MAP = {
+    "falling": 0,
+    "stable": 1,
+    "rising": 2,
+}
+
+VOLATILITY_LABEL_MAP = {
+    "low": 0,
+    "moderate": 1,
+    "high": 2,
+}
+
+TURNING_LABEL_MAP = {
+    "none": 0,
+    "early": 1,
+    "middle": 2,
+    "late": 3,
+}
+
 
 _FIT_JSON_CACHE = {}
 _FIT_CAPTION_CACHE = {}
@@ -50,7 +70,6 @@ _FIT_SCALER_CACHE = {}
 
 
 def _normalize_limit(max_samples):
-    """把样本上限统一成 int；<=0 表示不截断。"""
     if max_samples is None:
         return -1
     max_samples = int(max_samples)
@@ -59,10 +78,7 @@ def _normalize_limit(max_samples):
 
 def load_fit_json(root_path, data_path):
     """
-    读取 FIT 原始 json，并在进程内缓存。
-
-    `fit_dualsg_all.json` 很大，train/val/test 会在同一进程内重复读取多次；
-    这里缓存后，至少不再反复做磁盘解析。
+    Read FIT raw json and cache it per process.
     """
     full_path = os.path.normpath(os.path.join(root_path, data_path))
     if full_path not in _FIT_JSON_CACHE:
@@ -72,7 +88,9 @@ def load_fit_json(root_path, data_path):
 
 
 def build_fit_element_map(full_data):
-    """基于完整数据构建 element -> id 映射，保证 train/val/test 一致。"""
+    """
+    Build a stable element -> id mapping from the full dataset.
+    """
     element_map = {}
     for item in full_data:
         element = item.get("metadata", {}).get("element", "unknown")
@@ -83,11 +101,7 @@ def build_fit_element_map(full_data):
 
 def build_fit_sample_indices(total, data_path, flag, train_ratio, val_ratio, max_samples=-1):
     """
-    先按正式 split 取样本，再按本地 smoke 上限截断。
-
-    约定：
-    - max_samples <= 0: 不截断
-    - 截断永远发生在 split 之后，不影响正式训练语义
+    Split first, then optionally truncate for local smoke runs.
     """
     all_mode = is_all_mode(data_path)
     train_size = int(total * train_ratio)
@@ -130,11 +144,7 @@ def _collect_series_from_indices(full_data, sample_indices):
 
 def _get_train_only_scaler(full_data, root_path, data_path, train_ratio, val_ratio):
     """
-    只使用 train split 拟合 scaler，并缓存。
-
-    这是当前 FIT 默认策略，目的是：
-    - 避免 val/test 看见自己的分布统计
-    - 保证 train/val/test 共用同一缩放基准
+    Fit scaler on train split only and reuse it for val/test.
     """
     cache_key = _build_scaler_cache_key(root_path, data_path, train_ratio, val_ratio, "train_only")
     if cache_key in _FIT_SCALER_CACHE:
@@ -144,7 +154,6 @@ def _get_train_only_scaler(full_data, root_path, data_path, train_ratio, val_rat
         train_size = int(len(full_data) * train_ratio)
         train_indices = list(range(train_size))
     else:
-        # 非 all 模式下无法从单个 data_path 推断独立 train 文件，这里退化为对当前文件拟合。
         train_indices = list(range(len(full_data)))
 
     train_series = _collect_series_from_indices(full_data, train_indices)
@@ -154,7 +163,9 @@ def _get_train_only_scaler(full_data, root_path, data_path, train_ratio, val_rat
 
 
 def _get_split_fit_scaler(series, root_path, data_path, train_ratio, val_ratio, flag):
-    """保留旧行为：每个 split 各自拟合自己的 scaler。"""
+    """
+    Compatibility mode: each split fits its own scaler.
+    """
     cache_key = (
         os.path.normpath(os.path.join(root_path, data_path)),
         float(train_ratio),
@@ -189,11 +200,7 @@ def prepare_fit_dataset(
     fit_scaler_mode="train_only",
 ):
     """
-    把 FIT loader 需要的公共字段一次性准备好。
-
-    `fit_scaler_mode` 约定：
-    - `train_only`: 默认，只用 train split 拟合 scaler
-    - `split_fit`: 兼容旧逻辑，每个 split 各自拟合 scaler
+    Prepare the common FIT fields used by loaders.
     """
     full_data = load_fit_json(root_path, data_path)
     split_info = build_fit_sample_indices(
@@ -276,7 +283,9 @@ def prepare_fit_dataset(
 
 
 def load_fit_caption_embeddings(caption_emb_path, sample_indices):
-    """按 sample_indices 对齐离线文本 embedding。"""
+    """
+    Align offline caption embeddings with sample_indices.
+    """
     caption_emb_path = os.path.normpath(caption_emb_path)
     if caption_emb_path not in _FIT_CAPTION_CACHE:
         full_emb = torch.load(caption_emb_path, map_location="cpu")
@@ -292,14 +301,16 @@ def load_fit_caption_embeddings(caption_emb_path, sample_indices):
     if full_emb.shape[0] <= max_index:
         raise ValueError(
             f"caption_emb rows={full_emb.shape[0]} <= required max index={max_index}. "
-            "请确认 embedding 与原始 json 来自同一顺序。"
+            "Please make sure the embedding rows follow the same order as the source json."
         )
 
     return full_emb[sample_indices].float()
 
 
 def load_fit_text_field(root_path, data_path, sample_indices, text_field="annotations"):
-    """按 sample_indices 读取 FIT 原始文本字段。"""
+    """
+    Align raw FIT text fields with sample_indices.
+    """
     full_data = load_fit_json(root_path, data_path)
     texts = []
     for index in sample_indices:
@@ -307,3 +318,144 @@ def load_fit_text_field(root_path, data_path, sample_indices, text_field="annota
         value = item.get(text_field, "")
         texts.append("" if value is None else str(value))
     return texts
+
+
+def _safe_json_loads(value):
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            loaded = json.loads(text)
+            return loaded if isinstance(loaded, dict) else {"caption": str(loaded)}
+        except json.JSONDecodeError:
+            return {"caption": text}
+    return {"caption": str(value)}
+
+
+def _normalize_text(value):
+    return str(value or "").strip().lower()
+
+
+def _classify_trend(value):
+    text = _normalize_text(value)
+    if not text:
+        return None
+
+    falling_keywords = ("fall", "falling", "drop", "declin", "declining", "down", "decreas", "weaken")
+    rising_keywords = (
+        "rise",
+        "rising",
+        "grow",
+        "growing",
+        "increase",
+        "increasing",
+        "climb",
+        "surge",
+        "strengthen",
+        "upward",
+    )
+    stable_keywords = ("stable", "flat", "steady", "plateau", "sideway", "unchanged", "balanced")
+
+    if any(keyword in text for keyword in falling_keywords):
+        return TREND_LABEL_MAP["falling"]
+    if any(keyword in text for keyword in rising_keywords):
+        return TREND_LABEL_MAP["rising"]
+    if any(keyword in text for keyword in stable_keywords):
+        return TREND_LABEL_MAP["stable"]
+    return None
+
+
+def _classify_volatility(value):
+    text = _normalize_text(value)
+    if not text:
+        return None
+
+    low_keywords = ("low", "calm", "smooth", "mild")
+    moderate_keywords = ("moderate", "medium", "mixed")
+    high_keywords = ("high", "volatile", "sharp", "strong", "intense", "unstable")
+
+    if any(keyword in text for keyword in low_keywords):
+        return VOLATILITY_LABEL_MAP["low"]
+    if any(keyword in text for keyword in high_keywords):
+        return VOLATILITY_LABEL_MAP["high"]
+    if any(keyword in text for keyword in moderate_keywords):
+        return VOLATILITY_LABEL_MAP["moderate"]
+    return None
+
+
+def _classify_turning(value):
+    if value is None:
+        return TURNING_LABEL_MAP["none"], 0.0
+
+    if isinstance(value, list):
+        if not value:
+            return TURNING_LABEL_MAP["none"], 1.0
+        joined = " ".join(str(item) for item in value)
+    elif isinstance(value, dict):
+        joined = " ".join(f"{key} {item}" for key, item in value.items())
+    else:
+        joined = str(value)
+
+    text = _normalize_text(joined)
+    if not text:
+        return TURNING_LABEL_MAP["none"], 0.0
+    if any(keyword in text for keyword in ("none", "no turning", "no major turning")):
+        return TURNING_LABEL_MAP["none"], 1.0
+    if "early" in text:
+        return TURNING_LABEL_MAP["early"], 1.0
+    if "middle" in text or "mid " in text or "mid-" in text:
+        return TURNING_LABEL_MAP["middle"], 1.0
+    if "late" in text:
+        return TURNING_LABEL_MAP["late"], 1.0
+
+    # Turning points exist but the stage is not explicit.
+    return TURNING_LABEL_MAP["middle"], 1.0
+
+
+def parse_fit_semantic_targets(annotation_value):
+    """
+    Parse structured annotations into four semantic supervision targets.
+
+    The parser is intentionally robust enough to handle:
+    - full structured json with multiple fields
+    - split view json files with only a subset of fields
+    - plain caption strings as a fallback
+    """
+    annotation = _safe_json_loads(annotation_value)
+    caption = annotation.get("caption", "")
+
+    overall_label = _classify_trend(annotation.get("overall_trend", caption))
+    recent_label = _classify_trend(
+        annotation.get("recent_regime", annotation.get("recent_trend", caption))
+    )
+    volatility_label = _classify_volatility(annotation.get("volatility", caption))
+    turning_label, turning_mask = _classify_turning(annotation.get("major_turning_points"))
+
+    return {
+        "overall_label": int(overall_label if overall_label is not None else TREND_LABEL_MAP["stable"]),
+        "recent_label": int(recent_label if recent_label is not None else TREND_LABEL_MAP["stable"]),
+        "volatility_label": int(
+            volatility_label if volatility_label is not None else VOLATILITY_LABEL_MAP["moderate"]
+        ),
+        "turning_label": int(turning_label),
+        "overall_mask": float(overall_label is not None),
+        "recent_mask": float(recent_label is not None),
+        "volatility_mask": float(volatility_label is not None),
+        "turning_mask": float(turning_mask),
+    }
+
+
+def load_fit_semantic_targets(root_path, data_path, sample_indices, text_field="annotations"):
+    """
+    Align structured annotations with sample_indices and convert them to semantic targets.
+    """
+    full_data = load_fit_json(root_path, data_path)
+    targets = []
+    for index in sample_indices:
+        item = full_data[index]
+        annotation_value = item.get(text_field, "")
+        targets.append(parse_fit_semantic_targets(annotation_value))
+    return targets

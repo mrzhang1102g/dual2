@@ -77,6 +77,19 @@ def print_args(args):
         print(f'  {"Fusion Dropout:":<22}{args.fusion_dropout:<24}')
         print()
 
+    if args.task_name == "fit_num_with_meta_semantic":
+        print("\033[1m" + "FIT Semantic 参数" + "\033[0m")
+        print(
+            f'  {"Semantic Field:":<22}{getattr(args, "semantic_text_field", "n/a"):<24}'
+            f'{"Semantic Hidden:":<22}{getattr(args, "semantic_hidden", "n/a"):<24}'
+        )
+        print(
+            f'  {"Semantic Dropout:":<22}{getattr(args, "semantic_dropout", "n/a"):<24}'
+            f'{"Semantic Weight:":<22}{getattr(args, "semantic_loss_weight", "n/a"):<24}'
+        )
+        print(f'  {"Pretrained Num:":<22}{str(getattr(args, "pretrained_num_model_path", "")):<24}')
+        print()
+
     if args.task_name in ["geo_num", "geo_num_with_meta", "geo_fusion"]:
         print("\033[1m" + "Geo 参数" + "\033[0m")
         print(f'  {"Use Element:":<22}{args.use_element:<24}{"Use Group:":<22}{args.use_group:<24}')

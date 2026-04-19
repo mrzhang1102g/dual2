@@ -14,6 +14,7 @@ from utils.logger import log, log_warning, log_error
 # ===== FIT 系列 =====
 from models import Model_Fit_Num
 from models import Model_Fit_Num_With_Meta
+from models import Model_Fit_Num_With_Meta_Semantic
 from models import Model_Fit_Fusion
 
 # ===== Geo 系列 =====
@@ -48,13 +49,16 @@ class Exp_Basic(object):
             # ---------- FIT ----------
             'Model_Fit_Num': Model_Fit_Num,
             'Model_Fit_Num_With_Meta': Model_Fit_Num_With_Meta,
-            'Model_Fit_Fusion': Model_Fit_Fusion,
+            'Model_Fit_Num_With_Meta_Semantic': Model_Fit_Num_With_Meta_Semantic,
 
             # ---------- GeoStyle ----------
             'Model_Geo_Num': Model_Geo_Num,
             'Model_Geo_Num_With_Meta': Model_Geo_Num_With_Meta,
             'Model_Geo_Fusion': Model_Geo_Fusion,
         }
+
+        if Model_Fit_Fusion is not None:
+            self.model_dict['Model_Fit_Fusion'] = Model_Fit_Fusion
 
         # =====================================================
         # 设备
