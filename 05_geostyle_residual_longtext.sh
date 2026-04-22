@@ -24,8 +24,12 @@ python run.py \
   --num_model_path "$NUM_CKPT" \
   --caption_emb_path ./dataset/Geo_DualSG/pt/geo_dualsg_all.pt \
   --text_mode residual \
-  --llm_dim 768 \
-  --num_feat_dim 52 \
+  --fusion_optimizer_mode split \
+  --learning_rate 0.001 \
+  --lr_num 0.0001 \
+  --lr_text 0.0005 \
+  --num_feat_dim 64 \
+  --fusion_hidden 128 \
   --patch_adaptive 1 \
   --visualize False \
   --output_dir ./model_outputs/ \

@@ -234,59 +234,108 @@ class Model_Geo_Num_With_Meta(nn.Module):
 
         return combined, n_vars1
 
-    def forecast(self, x_enc, x_mark_enc=None, x_dec=None, x_mark_dec=None, element_ids=None, group_ids=None, caption_emb=None):
-        del x_mark_enc, x_dec, x_mark_dec
-
-        batch_size = x_enc.shape[0]
-
+    @staticmethod
+    def _instance_normalize(x_enc):
         means = x_enc.mean(1, keepdim=True).detach()
-        x_enc = x_enc - means
-        stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
-        x_enc = x_enc / stdev
+        x_norm = x_enc - means
+        stdev = torch.sqrt(torch.var(x_norm, dim=1, keepdim=True, unbiased=False) + 1e-5)
+        x_norm = x_norm / stdev
+        return x_norm, means, stdev
 
+    def _patchify(self, x_enc):
+        batch_size = x_enc.shape[0]
         x_enc = x_enc.permute(0, 2, 1)
-        enc_out, n_vars = self.apply_patch_embeddings(x_enc)
+        patch_tokens, n_vars = self.apply_patch_embeddings(x_enc)
+        patch_count = patch_tokens.shape[1]
+        patch_tokens = patch_tokens.reshape(batch_size, n_vars, patch_count, -1)
+        return patch_tokens, n_vars
 
-        patch_count = enc_out.shape[1]
-        enc_out = enc_out.reshape(batch_size, n_vars, patch_count, -1)
-        enc_out = enc_out.mean(dim=1)
-
-        if self.use_tscg and caption_emb is not None:
-            enc_out = self.semantic_guidance(enc_out, caption_emb)
-
-        meta_list = [enc_out]
+    def _fuse_metadata(self, sequence_tokens, element_ids, group_ids):
+        meta_list = [sequence_tokens]
 
         if self.use_element and element_ids is not None:
             elem_emb = self.element_embed(element_ids)
-            elem_expanded = elem_emb.unsqueeze(1).expand(-1, enc_out.shape[1], -1)
+            elem_expanded = elem_emb.unsqueeze(1).expand(-1, sequence_tokens.shape[1], -1)
             meta_list.append(elem_expanded)
 
         if self.use_group and group_ids is not None and self.group_embed is not None:
             group_ids = group_ids.long().clamp(0, self.num_group - 1)
             grp_emb = self.group_embed(group_ids)
-            grp_expanded = grp_emb.unsqueeze(1).expand(-1, enc_out.shape[1], -1)
+            grp_expanded = grp_emb.unsqueeze(1).expand(-1, sequence_tokens.shape[1], -1)
             meta_list.append(grp_expanded)
 
         if len(meta_list) > 1:
-            enc_out = self.meta_fusion(torch.cat(meta_list, dim=-1))
+            sequence_tokens = self.meta_fusion(torch.cat(meta_list, dim=-1))
+        return sequence_tokens
 
-        alpha = self.aim(enc_out)
-        enc_out = enc_out * alpha.unsqueeze(-1)
+    def _encode_sequence(self, patch_tokens, element_ids, group_ids, caption_emb):
+        sequence_tokens = patch_tokens.mean(dim=1)
 
-        enc_out, _ = self.encoder(enc_out)
-        enc_out = torch.reshape(enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1]))
-        enc_out = enc_out.permute(0, 1, 3, 2)
+        if self.use_tscg and caption_emb is not None:
+            sequence_tokens = self.semantic_guidance(sequence_tokens, caption_emb)
 
-        current_patch_num = enc_out.shape[-1]
+        sequence_tokens = self._fuse_metadata(sequence_tokens, element_ids, group_ids)
+        alpha = self.aim(sequence_tokens)
+        sequence_tokens = sequence_tokens * alpha.unsqueeze(-1)
+        encoded_sequence, _ = self.encoder(sequence_tokens)
+        return encoded_sequence
+
+    def _decode_forecast(self, encoded_tokens, means, stdev):
+        dec_tokens = encoded_tokens.permute(0, 1, 3, 2)
+        current_patch_num = dec_tokens.shape[-1]
         current_head_nf = self.d_model * current_patch_num
         if self.head.linear.in_features != current_head_nf:
-            self.head.linear = nn.Linear(current_head_nf, self.pred_len).to(enc_out.device)
+            self.head.linear = nn.Linear(current_head_nf, self.pred_len).to(dec_tokens.device)
 
-        dec_out = self.head(enc_out)
+        dec_out = self.head(dec_tokens)
         dec_out = dec_out.permute(0, 2, 1)
         dec_out = dec_out * stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1)
         dec_out = dec_out + means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1)
         return dec_out
+
+    @staticmethod
+    def _pool_summary(encoded_tokens):
+        return encoded_tokens.mean(dim=(1, 2))
+
+    def _run_backbone(self, x_enc, element_ids, group_ids, caption_emb):
+        x_norm, means, stdev = self._instance_normalize(x_enc)
+        patch_tokens, _ = self._patchify(x_norm)
+        encoded_sequence = self._encode_sequence(patch_tokens, element_ids, group_ids, caption_emb)
+        encoded_tokens = encoded_sequence.unsqueeze(1)
+        summary_state = self._pool_summary(encoded_tokens)
+        forecast = self._decode_forecast(encoded_tokens, means, stdev)[:, -self.pred_len :, :]
+
+        return {
+            "forecast": forecast,
+            "encoded_tokens": encoded_tokens,
+            "summary_state": summary_state,
+            "means": means,
+            "stdev": stdev,
+        }
+
+    def extract_features(
+        self,
+        x_enc,
+        x_mark_enc=None,
+        x_dec=None,
+        x_mark_dec=None,
+        element_ids=None,
+        group_ids=None,
+        caption_emb=None,
+    ):
+        del x_mark_enc, x_dec, x_mark_dec
+        return self._run_backbone(x_enc, element_ids, group_ids, caption_emb)
+
+    def forecast(self, x_enc, x_mark_enc=None, x_dec=None, x_mark_dec=None, element_ids=None, group_ids=None, caption_emb=None):
+        return self.extract_features(
+            x_enc,
+            x_mark_enc=x_mark_enc,
+            x_dec=x_dec,
+            x_mark_dec=x_mark_dec,
+            element_ids=element_ids,
+            group_ids=group_ids,
+            caption_emb=caption_emb,
+        )["forecast"]
 
     def forward(
         self,

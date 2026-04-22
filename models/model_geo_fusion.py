@@ -1,9 +1,4 @@
-"""Geo 融合模型。
-
-Geo 侧保留数值主干不变，文本分支支持两种融合方式：
-- `direct`：文本直接给出一条预测，再与数值流做加权混合；
-- `residual`：文本只产出修正量，在数值预测上做增量调整。
-"""
+"""Geo fusion model aligned with the unified FIT direct/residual design."""
 
 from copy import deepcopy
 
@@ -13,37 +8,84 @@ import torch.nn as nn
 from models.model_geo_num_with_meta import Model_Geo_Num_With_Meta as GeoNumericalModel
 
 
+def _to_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "t", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "f", "off"}:
+            return False
+        return default
+    return bool(value)
+
+
 class Model_Geo_Fusion(nn.Module):
-    """GeoStyle 融合模型主体。"""
+    """
+    Unified Geo fusion model.
+
+    `direct`
+        Numerical and text streams each produce a forecast.
+        Final prediction uses an explicit step-wise gate:
+        y_final = (1 - gate) * y_num + gate * y_text
+
+    `residual`
+        Numerical side produces residual bases.
+        Text side produces basis coefficients and correction radius.
+        Final prediction is:
+        y_final = y_num + radius * tanh(sum_k basis_k * coeff_k)
+    """
 
     def __init__(self, configs, numerical_ckpt_path=None):
         super().__init__()
 
         self.configs = configs
-        self.pred_len = configs.pred_len
-        self.num_channels = getattr(configs, "enc_in", 1)
+        self.pred_len = int(configs.pred_len)
+        self.num_channels = int(getattr(configs, "enc_in", 1))
+        self.output_dim = self.pred_len * self.num_channels
 
-        self.freeze_numerical = getattr(configs, "freeze_numerical", False)
-        self.disable_text = getattr(configs, "disable_text", False)
-        self.text_mode = getattr(configs, "text_mode", "residual")
+        self.text_mode = getattr(configs, "text_mode", "direct")
+        if self.text_mode not in {"direct", "residual"}:
+            raise ValueError(f"[Geo-Fusion] Unsupported text_mode: {self.text_mode}")
 
-        # residual 模式下用于控制修正幅度。
-        self.use_vol_prior = bool(getattr(configs, "use_vol_prior", True))
-        self.force_gain = float(getattr(configs, "force_gain", -1))
+        self.freeze_numerical = _to_bool(getattr(configs, "freeze_numerical", False), False)
+        self.disable_text = _to_bool(getattr(configs, "disable_text", False), False)
 
-        # direct 模式下用于控制文本流权重。
-        self.direct_w_mode = getattr(configs, "direct_w_mode", "learned")
-        self.direct_w_fixed = float(getattr(configs, "direct_w_fixed", 0.5))
+        self.text_hidden = int(getattr(configs, "text_hidden", 128))
+        self.residual_rank = int(getattr(configs, "residual_rank", 8))
+        self.num_feat_dim = int(getattr(configs, "num_feat_dim", max(self.pred_len, 24)))
+        self.fusion_hidden = int(getattr(configs, "fusion_hidden", max(self.pred_len * 4, 96)))
+        self.fusion_dropout = float(getattr(configs, "fusion_dropout", 0.1))
+        self.direct_gate_bias = float(getattr(configs, "direct_gate_bias", 0.0))
+        self.direct_gate_cap = min(max(float(getattr(configs, "direct_gate_cap", 1.0)), 0.0), 1.0)
+        self.direct_text_scale = max(float(getattr(configs, "direct_text_scale", 1.0)), 0.0)
+        self.residual_radius_scale = max(float(getattr(configs, "residual_radius_scale", 1.0)), 0.0)
+        self.residual_delta_scale = max(float(getattr(configs, "residual_delta_scale", 1.0)), 0.0)
 
-        # 数值主干沿用带元数据的 Geo 模型。
-        num_cfg = deepcopy(configs)
-        num_cfg.task_name = "geo_num_with_meta"
-        num_cfg.use_element = True
-        num_cfg.use_group = True
-        num_cfg.num_element = getattr(configs, "num_element", 46)
-        num_cfg.num_group = getattr(configs, "num_group", 44)
+        self.numerical_model = self._build_numerical_backbone(configs, numerical_ckpt_path)
+        self.backbone_dim = int(self.numerical_model.d_model)
 
-        self.numerical_model = GeoNumericalModel(num_cfg)
+        self._init_shared_modules()
+        self._init_direct_modules()
+        self._init_residual_modules()
+
+        self.aux_loss = None
+        if self.disable_text:
+            self._freeze_non_numerical_parameters()
+
+    def _build_numerical_backbone(self, configs, numerical_ckpt_path):
+        numerical_cfg = deepcopy(configs)
+        numerical_cfg.task_name = "geo_num_with_meta"
+        numerical_cfg.use_element = True
+        numerical_cfg.use_group = True
+        numerical_cfg.num_element = getattr(configs, "num_element", 46)
+        numerical_cfg.num_group = getattr(configs, "num_group", 44)
+        numerical_model = GeoNumericalModel(numerical_cfg)
 
         ckpt_path = numerical_ckpt_path
         if isinstance(ckpt_path, str):
@@ -53,55 +95,266 @@ class Model_Geo_Fusion(nn.Module):
             ckpt = torch.load(ckpt_path, map_location="cpu")
             if isinstance(ckpt, dict) and "state_dict" in ckpt:
                 ckpt = ckpt["state_dict"]
-            self.numerical_model.load_state_dict(ckpt, strict=False)
+            numerical_model.load_state_dict(ckpt, strict=False)
 
         if self.freeze_numerical:
-            for param in self.numerical_model.parameters():
+            for param in numerical_model.parameters():
                 param.requires_grad = False
+            numerical_model.eval()
+
+        return numerical_model
+
+    def _init_shared_modules(self):
+        dropout = self.fusion_dropout
+
+        self.text_proj = nn.Sequential(
+            nn.LazyLinear(self.text_hidden * 2),
+            nn.GELU(),
+            nn.LayerNorm(self.text_hidden * 2),
+            nn.Dropout(dropout),
+            nn.Linear(self.text_hidden * 2, self.text_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.text_hidden),
+        )
+
+        self.summary_proj = nn.Sequential(
+            nn.Linear(self.backbone_dim, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+        )
+        self.y_num_proj = nn.Sequential(
+            nn.Linear(self.output_dim, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+        )
+        self.hist_proj = nn.Sequential(
+            nn.Linear(self.num_channels * 5, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+        )
+        self.encoded_proj = nn.Sequential(
+            nn.LazyLinear(self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+        )
+
+    def _init_direct_modules(self):
+        dropout = self.fusion_dropout
+        gate_in_dim = self.text_hidden + self.fusion_hidden * 3
+
+        self.direct_text_head = nn.Sequential(
+            nn.Linear(self.text_hidden, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.output_dim),
+        )
+
+        self.direct_gate_head = nn.Sequential(
+            nn.Linear(gate_in_dim, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.output_dim),
+        )
+
+    def _init_residual_modules(self):
+        dropout = self.fusion_dropout
+        basis_in_dim = self.fusion_hidden * 4
+        radius_in_dim = self.text_hidden + self.fusion_hidden
+
+        self.residual_basis_head = nn.Sequential(
+            nn.Linear(basis_in_dim, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.output_dim * self.residual_rank),
+        )
+
+        self.residual_text_coeff_head = nn.Sequential(
+            nn.Linear(self.text_hidden, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.pred_len * self.residual_rank),
+        )
+
+        self.residual_radius_head = nn.Sequential(
+            nn.Linear(radius_in_dim, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.output_dim),
+        )
+
+    def _freeze_non_numerical_parameters(self):
+        for name, param in self.named_parameters():
+            if not name.startswith("numerical_model"):
+                param.requires_grad = False
+
+    def train(self, mode=True):
+        super().train(mode)
+        if self.freeze_numerical:
             self.numerical_model.eval()
+        return self
 
-        self.llm_dim = getattr(configs, "llm_dim", 768)
-
-        self.text_pred_proj = nn.Sequential(
-            nn.Linear(self.llm_dim, self.pred_len * 2),
-            nn.ReLU(),
-            nn.Linear(self.pred_len * 2, self.pred_len),
-        )
-
-        self.delta_proj = nn.Sequential(
-            nn.Linear(self.llm_dim, self.pred_len * 2),
-            nn.ReLU(),
-            nn.LayerNorm(self.pred_len * 2),
-            nn.Linear(self.pred_len * 2, self.pred_len),
-        )
-
-        self.text_weight = nn.Parameter(torch.ones(self.num_channels) * -1.0)
-        self.alpha = float(getattr(configs, "alpha", 1.0))
-        self.delta_scale = float(getattr(configs, "delta_scale", 1.0))
-
-        global_stdev_mean = float(getattr(configs, "global_stdev_mean", 0.17179356515407562))
-        self.register_buffer("global_stdev_mean", torch.tensor(global_stdev_mean, dtype=torch.float32))
-
-    def _sanitize_caption_emb(self, caption_emb, device):
-        """把 caption embedding 规整为 `[B, D]` 的 float tensor。"""
+    @staticmethod
+    def _sanitize_caption_emb(caption_emb, device):
         if not isinstance(caption_emb, torch.Tensor):
             caption_emb = torch.tensor(caption_emb)
-        caption_emb = caption_emb.to(device).float()
+
+        caption_emb = caption_emb.to(device=device)
         if caption_emb.dim() == 1:
             caption_emb = caption_emb.unsqueeze(0)
+        if caption_emb.dtype != torch.float32:
+            caption_emb = caption_emb.float()
         return caption_emb
 
-    def _build_w(self, channels, device):
-        """为 direct 模式构造逐通道融合权重。"""
-        if self.direct_w_mode == "fixed":
-            weight = torch.full((1, 1, channels), self.direct_w_fixed, device=device)
-        else:
-            weight = torch.sigmoid(self.text_weight).to(device)
-            if weight.numel() == 1:
-                weight = weight.view(1, 1, 1).expand(1, 1, channels)
-            else:
-                weight = weight[:channels].view(1, 1, channels)
-        return weight
+    @staticmethod
+    def _reshape_output(flat_output, batch_size, pred_len, num_channels, dtype):
+        return flat_output.to(dtype=dtype).reshape(batch_size, pred_len, num_channels)
+
+    @staticmethod
+    def _compute_history_features(x_enc):
+        last_value = x_enc[:, -1, :]
+        mean_value = x_enc.mean(dim=1)
+        std_value = x_enc.std(dim=1, unbiased=False)
+        slope_value = (x_enc[:, -1, :] - x_enc[:, 0, :]) / max(x_enc.shape[1] - 1, 1)
+        range_value = x_enc.max(dim=1).values - x_enc.min(dim=1).values
+
+        return {
+            "last": last_value,
+            "mean": mean_value,
+            "std": std_value,
+            "slope": slope_value,
+            "range": range_value,
+            "flat": torch.cat([last_value, mean_value, std_value, slope_value, range_value], dim=-1),
+        }
+
+    def _extract_numerical_features(self, x_enc, x_mark_enc, x_dec, x_mark_dec, element_ids, group_ids):
+        if self.freeze_numerical:
+            self.numerical_model.eval()
+            with torch.no_grad():
+                return self.numerical_model.extract_features(
+                    x_enc,
+                    x_mark_enc=x_mark_enc,
+                    x_dec=x_dec,
+                    x_mark_dec=x_mark_dec,
+                    element_ids=element_ids,
+                    group_ids=group_ids,
+                    caption_emb=None,
+                )
+
+        return self.numerical_model.extract_features(
+            x_enc,
+            x_mark_enc=x_mark_enc,
+            x_dec=x_dec,
+            x_mark_dec=x_mark_dec,
+            element_ids=element_ids,
+            group_ids=group_ids,
+            caption_emb=None,
+        )
+
+    def _build_numerical_contexts(self, numerical_features, history_features):
+        y_num = numerical_features["forecast"]
+        encoded_tokens = numerical_features["encoded_tokens"]
+        summary_state = numerical_features["summary_state"]
+        batch_size = y_num.shape[0]
+
+        y_num_ctx = self.y_num_proj(y_num.reshape(batch_size, self.output_dim))
+        summary_ctx = self.summary_proj(summary_state)
+        hist_ctx = self.hist_proj(history_features["flat"].float())
+        encoded_summary = encoded_tokens.mean(dim=2).reshape(batch_size, -1)
+        encoded_ctx = self.encoded_proj(encoded_summary)
+
+        return {
+            "y_num_ctx": y_num_ctx,
+            "summary_ctx": summary_ctx,
+            "hist_ctx": hist_ctx,
+            "encoded_ctx": encoded_ctx,
+        }
+
+    def _apply_direct(self, text_ctx, numerical_features, numerical_contexts):
+        y_num = numerical_features["forecast"]
+        batch_size = y_num.shape[0]
+
+        y_text = self._reshape_output(
+            self.direct_text_head(text_ctx),
+            batch_size,
+            self.pred_len,
+            self.num_channels,
+            y_num.dtype,
+        )
+        y_text = self.direct_text_scale * y_text
+
+        gate_input = torch.cat(
+            [
+                text_ctx,
+                numerical_contexts["summary_ctx"],
+                numerical_contexts["y_num_ctx"],
+                numerical_contexts["hist_ctx"],
+            ],
+            dim=-1,
+        )
+        gate_logits = self._reshape_output(
+            self.direct_gate_head(gate_input),
+            batch_size,
+            self.pred_len,
+            self.num_channels,
+            y_num.dtype,
+        )
+        gate = torch.sigmoid(gate_logits + self.direct_gate_bias)
+        gate = gate * self.direct_gate_cap
+
+        self.aux_loss = None
+        return (1.0 - gate) * y_num + gate * y_text
+
+    def _apply_residual(self, text_ctx, numerical_features, numerical_contexts):
+        y_num = numerical_features["forecast"]
+        batch_size = y_num.shape[0]
+
+        basis_input = torch.cat(
+            [
+                numerical_contexts["encoded_ctx"],
+                numerical_contexts["summary_ctx"],
+                numerical_contexts["y_num_ctx"],
+                numerical_contexts["hist_ctx"],
+            ],
+            dim=-1,
+        )
+        residual_basis = self.residual_basis_head(basis_input).reshape(
+            batch_size,
+            self.pred_len,
+            self.num_channels,
+            self.residual_rank,
+        )
+
+        text_coeff = self.residual_text_coeff_head(text_ctx).reshape(
+            batch_size,
+            self.pred_len,
+            self.residual_rank,
+        )
+        delta_raw = torch.einsum("blcr,blr->blc", residual_basis, text_coeff.to(dtype=residual_basis.dtype))
+
+        radius_input = torch.cat([text_ctx, numerical_contexts["hist_ctx"]], dim=-1)
+        radius = torch.sigmoid(
+            self._reshape_output(
+                self.residual_radius_head(radius_input),
+                batch_size,
+                self.pred_len,
+                self.num_channels,
+                y_num.dtype,
+            )
+        )
+        radius = radius * self.residual_radius_scale
+
+        delta = self.residual_delta_scale * radius * torch.tanh(delta_raw.to(dtype=y_num.dtype))
+        self.aux_loss = None
+        return y_num + delta
 
     def forward(
         self,
@@ -115,61 +368,29 @@ class Model_Geo_Fusion(nn.Module):
         caption_emb=None,
     ):
         del norms
+
         if caption_emb is None:
             raise ValueError("[Geo-Fusion] caption_emb must be provided")
 
-        device = x_enc.device
-        _, _, channels = x_enc.shape
-        caption_emb = self._sanitize_caption_emb(caption_emb, device)
-
-        def _call_num():
-            return self.numerical_model(
-                x_enc,
-                x_mark_enc,
-                x_dec,
-                x_mark_dec,
-                element_ids=element_ids,
-                group_ids=group_ids,
-                caption_emb=None,
-            )
-
-        if self.freeze_numerical:
-            with torch.no_grad():
-                y_num = _call_num()
-        else:
-            y_num = _call_num()
+        caption_emb = self._sanitize_caption_emb(caption_emb, device=x_enc.device)
+        numerical_features = self._extract_numerical_features(
+            x_enc,
+            x_mark_enc,
+            x_dec,
+            x_mark_dec,
+            element_ids,
+            group_ids,
+        )
+        y_num = numerical_features["forecast"]
 
         if self.disable_text:
+            self.aux_loss = None
             return y_num
 
-        # direct：文本流直接给出一条预测，再与数值流做加权融合。
+        history_features = self._compute_history_features(x_enc)
+        numerical_contexts = self._build_numerical_contexts(numerical_features, history_features)
+        text_ctx = self.text_proj(caption_emb)
+
         if self.text_mode == "direct":
-            y_text = self.text_pred_proj(caption_emb).unsqueeze(-1)
-            if channels > 1:
-                y_text = y_text.expand(-1, -1, channels)
-            weight = self._build_w(channels, device)
-            return (1.0 - weight) * y_num + weight * y_text
-
-        # residual：文本流提供修正量，叠加到数值预测上。
-        if self.text_mode == "residual":
-            delta_y = self.delta_proj(caption_emb) * self.delta_scale
-            delta_y = delta_y.unsqueeze(-1)
-            if channels > 1:
-                delta_y = delta_y.expand(-1, -1, channels)
-
-            if self.force_gain == 0:
-                gain = torch.zeros_like(delta_y)
-            elif self.force_gain > 0:
-                gain = torch.ones_like(delta_y) * self.force_gain
-            else:
-                if self.use_vol_prior:
-                    sample_stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5).detach()
-                    base_stdev = sample_stdev.mean(dim=2, keepdim=True)
-                    gain = 1.0 + self.alpha * (base_stdev / (self.global_stdev_mean + 1e-6))
-                    gain = gain.expand(-1, self.pred_len, -1)
-                else:
-                    gain = torch.ones_like(delta_y)
-
-            return y_num + gain * delta_y
-
-        raise ValueError(f"[Geo-Fusion] Unknown text_mode: {self.text_mode}")
+            return self._apply_direct(text_ctx, numerical_features, numerical_contexts)
+        return self._apply_residual(text_ctx, numerical_features, numerical_contexts)

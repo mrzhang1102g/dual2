@@ -65,12 +65,14 @@ def print_args(args):
 
     if args.task_name == "geo_fusion":
         print("\033[1m" + "Geo Fusion" + "\033[0m")
+        print(f'  {"Fusion Arch:":<22}{"unified_direct_residual":<24}{"Text Mode:":<22}{args.text_mode:<24}')
         print(f'  {"Num Model Path:":<22}{args.num_model_path:<24}{"Caption Emb Path:":<22}{str(args.caption_emb_path):<24}')
         print(f'  {"Freeze Numerical:":<22}{args.freeze_numerical:<24}{"Disable Text:":<22}{args.disable_text:<24}')
-        print(f'  {"Text Mode:":<22}{args.text_mode:<24}{"LLM Dim:":<22}{args.llm_dim:<24}')
-        print(f'  {"Delta Scale:":<22}{args.delta_scale:<24}{"Use Vol Prior:":<22}{args.use_vol_prior:<24}')
-        print(f'  {"Force Gain:":<22}{args.force_gain:<24}{"Alpha:":<22}{args.alpha:<24}')
-        print(f'  {"W Mode:":<22}{args.direct_w_mode:<24}{"W Fixed:":<22}{args.direct_w_fixed:<24}')
+        print(f'  {"Opt Mode:":<22}{args.fusion_optimizer_mode:<24}{"LR Num:":<22}{args.lr_num:<24}')
+        print(f'  {"LR Text:":<22}{args.lr_text:<24}{"WD Text:":<22}{args.weight_decay_text:<24}')
+        print(f'  {"Num Feat Dim:":<22}{args.num_feat_dim:<24}{"Fusion Hidden:":<22}{args.fusion_hidden:<24}')
+        print(f'  {"Text Hidden:":<22}{args.text_hidden:<24}{"Residual Rank:":<22}{args.residual_rank:<24}')
+        print(f'  {"Fusion Dropout:":<22}{args.fusion_dropout:<24}')
         print()
 
     if args.task_name in ["geo_num", "geo_num_with_meta", "geo_fusion"]:

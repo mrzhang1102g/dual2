@@ -1,4 +1,4 @@
-"""Geo 融合实验。"""
+"""Geo fusion experiment aligned with the FIT fusion training loop."""
 
 import os
 import time
@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore")
 
 
 class Exp_Geo_Fusion(Exp_Basic):
-    """GeoStyle 融合实验类。"""
+    """GeoStyle fusion experiment."""
 
     def __init__(self, args):
         super().__init__(args)
@@ -29,6 +29,7 @@ class Exp_Geo_Fusion(Exp_Basic):
     def _build_model(self, args):
         num_ckpt = getattr(args, "num_model_path", None)
         self.log(f"num_ckpt: {num_ckpt}")
+        self.log("fusion_arch: unified_direct_residual")
 
         model = FusionModel(args, numerical_ckpt_path=num_ckpt).float()
         if args.use_multi_gpu and args.use_gpu:
@@ -41,11 +42,65 @@ class Exp_Geo_Fusion(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        # 融合实验只优化 requires_grad=True 的参数，冻结部分自然跳过。
-        return optim.Adam(
-            filter(lambda p: p.requires_grad, self.model.parameters()),
-            lr=self.args.learning_rate,
-        )
+        optimizer_mode = getattr(self.args, "fusion_optimizer_mode", "unified")
+        if optimizer_mode == "unified":
+            trainable_params = [param for param in self.model.parameters() if param.requires_grad]
+            if not trainable_params:
+                raise ValueError("No trainable parameters found for Geo fusion optimizer.")
+            return optim.Adam(
+                [
+                    {
+                        "params": trainable_params,
+                        "lr": self.args.learning_rate,
+                        "base_lr": self.args.learning_rate,
+                        "weight_decay": self.args.weight_decay,
+                        "group_name": "all",
+                    }
+                ]
+            )
+
+        if optimizer_mode != "split":
+            raise ValueError(f"Unsupported fusion_optimizer_mode: {optimizer_mode}")
+
+        module = self.model.module if hasattr(self.model, "module") else self.model
+        numerical_param_ids = {id(param) for param in module.numerical_model.parameters() if param.requires_grad}
+
+        numerical_params = []
+        text_fusion_params = []
+        for param in self.model.parameters():
+            if not param.requires_grad:
+                continue
+            if id(param) in numerical_param_ids:
+                numerical_params.append(param)
+            else:
+                text_fusion_params.append(param)
+
+        param_groups = []
+        if numerical_params:
+            param_groups.append(
+                {
+                    "params": numerical_params,
+                    "lr": self.args.lr_num,
+                    "base_lr": self.args.lr_num,
+                    "weight_decay": self.args.weight_decay,
+                    "group_name": "numerical",
+                }
+            )
+        if text_fusion_params:
+            param_groups.append(
+                {
+                    "params": text_fusion_params,
+                    "lr": self.args.lr_text,
+                    "base_lr": self.args.lr_text,
+                    "weight_decay": self.args.weight_decay_text,
+                    "group_name": "text_fusion",
+                }
+            )
+
+        if not param_groups:
+            raise ValueError("No trainable parameters found for Geo fusion optimizer.")
+
+        return optim.Adam(param_groups)
 
     def _select_criterion(self):
         if self.args.loss == "MSE":
@@ -54,8 +109,7 @@ class Exp_Geo_Fusion(Exp_Basic):
             return nn.L1Loss()
         raise ValueError(f"Unsupported loss type: {self.args.loss}")
 
-    def _unpack_batch(self, batch):
-        """将 Geo 融合流 batch 解包并移动到设备上。"""
+    def _prepare_batch(self, batch):
         if len(batch) != 8:
             raise ValueError(
                 "Geo_Fusion expects 8 items "
@@ -82,10 +136,44 @@ class Exp_Geo_Fusion(Exp_Basic):
         )
 
     def _build_dec_inp(self, batch_y):
-        """构造与数值流一致的 decoder 输入。"""
         dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len :, :])
         dec_inp = torch.cat([batch_y[:, : self.args.label_len, :], dec_inp], dim=1).to(self.device)
         return dec_inp
+
+    def _forward_batch(self, batch):
+        batch_x, batch_y, batch_x_mark, batch_y_mark, element_id, group_id, norm, caption_emb = batch
+        dec_inp = self._build_dec_inp(batch_y)
+
+        outputs = self.model(
+            batch_x,
+            batch_x_mark,
+            dec_inp,
+            batch_y_mark,
+            element_ids=element_id,
+            group_ids=group_id,
+            norms=norm,
+            caption_emb=caption_emb,
+        )
+
+        f_dim = -1 if self.args.features == "MS" else 0
+        pred = outputs[:, -self.args.pred_len :, f_dim:]
+        target = batch_y[:, -self.args.pred_len :, f_dim:]
+        return pred, target
+
+    def _compute_loss(self, outputs, target, criterion):
+        loss = criterion(outputs, target)
+        module = self.model.module if hasattr(self.model, "module") else self.model
+        aux_loss = getattr(module, "aux_loss", None)
+        if aux_loss is not None:
+            loss = loss + aux_loss
+        return loss
+
+    def _warmup_model(self, train_loader):
+        for _, batch in enumerate(train_loader):
+            batch = self._prepare_batch(batch)
+            with torch.no_grad():
+                self._forward_batch(batch)
+            break
 
     def _save_test_outputs(self, setting, preds, trues, metrics_tuple):
         result_folder = os.path.join(self.args.output_dir, setting, "results")
@@ -110,25 +198,9 @@ class Exp_Geo_Fusion(Exp_Basic):
 
         with torch.no_grad():
             for batch in vali_loader:
-                batch_x, batch_y, batch_x_mark, batch_y_mark, element_id, group_id, norm, caption_emb = self._unpack_batch(batch)
-                dec_inp = self._build_dec_inp(batch_y)
-
-                outputs = self.model(
-                    batch_x,
-                    batch_x_mark,
-                    dec_inp,
-                    batch_y_mark,
-                    element_ids=element_id,
-                    group_ids=group_id,
-                    norms=norm,
-                    caption_emb=caption_emb,
-                )
-
-                f_dim = -1 if self.args.features == "MS" else 0
-                pred = outputs[:, -self.args.pred_len :, f_dim:]
-                target = batch_y[:, -self.args.pred_len :, f_dim:]
-
-                losses.append(criterion(pred, target).item())
+                batch = self._prepare_batch(batch)
+                outputs, target = self._forward_batch(batch)
+                losses.append(self._compute_loss(outputs, target, criterion).item())
 
         self.model.train()
         return float(np.mean(losses))
@@ -141,10 +213,10 @@ class Exp_Geo_Fusion(Exp_Basic):
         path = os.path.join(self.args.checkpoint_dir, setting)
         os.makedirs(path, exist_ok=True)
 
+        self._warmup_model(train_loader)
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
-
         self.print_trainable_parameters()
 
         for epoch in range(self.args.train_epochs):
@@ -155,32 +227,10 @@ class Exp_Geo_Fusion(Exp_Basic):
             pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch + 1}", unit="it")
             for _, batch in pbar:
                 model_optim.zero_grad()
-
-                batch_x, batch_y, batch_x_mark, batch_y_mark, element_id, group_id, norm, caption_emb = self._unpack_batch(batch)
-                dec_inp = self._build_dec_inp(batch_y)
-
-                outputs = self.model(
-                    batch_x,
-                    batch_x_mark,
-                    dec_inp,
-                    batch_y_mark,
-                    element_ids=element_id,
-                    group_ids=group_id,
-                    norms=norm,
-                    caption_emb=caption_emb,
-                )
-
-                f_dim = -1 if self.args.features == "MS" else 0
-                pred = outputs[:, -self.args.pred_len :, f_dim:]
-                target = batch_y[:, -self.args.pred_len :, f_dim:]
-
-                loss_main = criterion(pred, target)
-                module = self.model.module if hasattr(self.model, "module") else self.model
-                aux_loss = getattr(module, "aux_loss", None)
-
-                loss = loss_main if aux_loss is None else loss_main + aux_loss
+                batch = self._prepare_batch(batch)
+                outputs, target = self._forward_batch(batch)
+                loss = self._compute_loss(outputs, target, criterion)
                 train_losses.append(loss.item())
-
                 loss.backward()
                 model_optim.step()
 
@@ -229,28 +279,14 @@ class Exp_Geo_Fusion(Exp_Basic):
 
         with torch.no_grad():
             for i, batch in enumerate(test_loader):
-                batch_x, batch_y, batch_x_mark, batch_y_mark, element_id, group_id, norm, caption_emb = self._unpack_batch(batch)
-                dec_inp = self._build_dec_inp(batch_y)
-
-                outputs = self.model(
-                    batch_x,
-                    batch_x_mark,
-                    dec_inp,
-                    batch_y_mark,
-                    element_ids=element_id,
-                    group_ids=group_id,
-                    norms=norm,
-                    caption_emb=caption_emb,
-                )
-
-                f_dim = -1 if self.args.features == "MS" else 0
-                pred = outputs[:, -self.args.pred_len :, f_dim:]
-                true = batch_y[:, -self.args.pred_len :, f_dim:]
+                batch = self._prepare_batch(batch)
+                batch_x, _, _, _, _, _, norm, _ = batch
+                outputs, target = self._forward_batch(batch)
 
                 min_v = norm[:, 0].view(-1, 1, 1)
                 max_v = norm[:, 1].view(-1, 1, 1)
-                pred_denorm = pred * (max_v - min_v) + min_v
-                true_denorm = true * (max_v - min_v) + min_v
+                pred_denorm = outputs * (max_v - min_v) + min_v
+                true_denorm = target * (max_v - min_v) + min_v
 
                 pred_np = pred_denorm.detach().cpu().numpy()
                 true_np = true_denorm.detach().cpu().numpy()
@@ -311,7 +347,6 @@ class Exp_Geo_Fusion(Exp_Basic):
         return metrics_tuple
 
     def _plot_predictions(self, preds, trues, setting, mae, mse, rmse, mape, wape, num_samples=10):
-        """导出汇总 PDF，包含散点图、误差分布和样本曲线。"""
         import matplotlib
 
         matplotlib.use("Agg")
