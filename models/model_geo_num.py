@@ -126,7 +126,7 @@ class Model_Geo_Num(nn.Module):
 
         self.aim = AdaptiveImportanceMask(d_model=configs.d_model, num_heads=configs.n_heads)
 
-        if self.task_name in {"long_term_forecast", "short_term_forecast"}:
+        if self.task_name in {"long_term_forecast", "short_term_forecast", "geo_num"}:
             self.head = FlattenHead(configs.enc_in, self.head_nf, configs.pred_len, head_dropout=configs.dropout)
 
     def apply_patch_embeddings(self, x_enc):
@@ -181,7 +181,7 @@ class Model_Geo_Num(nn.Module):
         return dec_out
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
-        if self.task_name in {"long_term_forecast", "short_term_forecast"}:
+        if self.task_name in {"long_term_forecast", "short_term_forecast", "geo_num"}:
             dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
             return dec_out[:, -self.pred_len :, :]
         return None

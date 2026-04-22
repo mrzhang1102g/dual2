@@ -212,7 +212,13 @@ class Model_Geo_Num_With_Meta(nn.Module):
         else:
             head_nf = configs.d_model * self.num_patches
 
-        if self.task_name in {"long_term_forecast", "short_term_forecast", "long_term_forecast_meta"}:
+        if self.task_name in {
+            "long_term_forecast",
+            "short_term_forecast",
+            "long_term_forecast_meta",
+            "geo_num_with_meta",
+            "geo_fusion",
+        }:
             self.head = FlattenHead(configs.enc_in, head_nf, configs.pred_len, head_dropout=configs.dropout)
 
     def apply_patch_embeddings(self, x_enc):
@@ -307,7 +313,13 @@ class Model_Geo_Num_With_Meta(nn.Module):
     ):
         del gender_ids, age_ids, kwargs
 
-        if self.task_name in {"long_term_forecast", "short_term_forecast", "long_term_forecast_meta"}:
+        if self.task_name in {
+            "long_term_forecast",
+            "short_term_forecast",
+            "long_term_forecast_meta",
+            "geo_num_with_meta",
+            "geo_fusion",
+        }:
             # 向后兼容：旧调用里如果还传 city_ids，就把它视为 group_ids。
             if group_ids is None and city_ids is not None:
                 group_ids = city_ids
