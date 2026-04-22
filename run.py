@@ -193,6 +193,11 @@ def add_fit_fusion_args(parser):
     parser.add_argument("--fusion_optimizer_mode", type=str, default="unified", choices=["unified", "split"])
     parser.add_argument("--text_hidden", type=int, default=128)
     parser.add_argument("--residual_rank", type=int, default=8)
+    parser.add_argument("--direct_gate_bias", type=float, default=-0.8)
+    parser.add_argument("--direct_gate_cap", type=float, default=0.4)
+    parser.add_argument("--direct_text_scale", type=float, default=0.9)
+    parser.add_argument("--residual_radius_scale", type=float, default=1.1)
+    parser.add_argument("--residual_delta_scale", type=float, default=1.05)
 
 
 def add_geo_fusion_args(parser):

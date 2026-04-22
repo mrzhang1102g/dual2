@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# FIT 数值流 + 元数据：半年预测
+# FIT num+meta: halfyear
 source /data1/miniconda3/bin/activate dualsg2
 
 python run.py \

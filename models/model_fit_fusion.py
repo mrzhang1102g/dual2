@@ -73,6 +73,11 @@ class Model_Fit_Fusion(nn.Module):
         self.num_feat_dim = int(getattr(configs, "num_feat_dim", max(self.pred_len, 24)))
         self.fusion_hidden = int(getattr(configs, "fusion_hidden", max(self.pred_len * 4, 96)))
         self.fusion_dropout = float(getattr(configs, "fusion_dropout", 0.1))
+        self.direct_gate_bias = float(getattr(configs, "direct_gate_bias", 0.0))
+        self.direct_gate_cap = min(max(float(getattr(configs, "direct_gate_cap", 1.0)), 0.0), 1.0)
+        self.direct_text_scale = max(float(getattr(configs, "direct_text_scale", 1.0)), 0.0)
+        self.residual_radius_scale = max(float(getattr(configs, "residual_radius_scale", 1.0)), 0.0)
+        self.residual_delta_scale = max(float(getattr(configs, "residual_delta_scale", 1.0)), 0.0)
 
         self.numerical_model = self._build_numerical_backbone(configs, numerical_ckpt_path)
         self.backbone_dim = int(self.numerical_model.d_model)
@@ -305,6 +310,7 @@ class Model_Fit_Fusion(nn.Module):
             self.num_channels,
             y_num.dtype,
         )
+        y_text = self.direct_text_scale * y_text
 
         gate_input = torch.cat(
             [
@@ -315,15 +321,15 @@ class Model_Fit_Fusion(nn.Module):
             ],
             dim=-1,
         )
-        gate = torch.sigmoid(
-            self._reshape_output(
-                self.direct_gate_head(gate_input),
-                batch_size,
-                self.pred_len,
-                self.num_channels,
-                y_num.dtype,
-            )
+        gate_logits = self._reshape_output(
+            self.direct_gate_head(gate_input),
+            batch_size,
+            self.pred_len,
+            self.num_channels,
+            y_num.dtype,
         )
+        gate = torch.sigmoid(gate_logits + self.direct_gate_bias)
+        gate = gate * self.direct_gate_cap
 
         self.aux_loss = None
         return (1.0 - gate) * y_num + gate * y_text
@@ -366,8 +372,9 @@ class Model_Fit_Fusion(nn.Module):
                 y_num.dtype,
             )
         )
+        radius = radius * self.residual_radius_scale
 
-        delta = radius * torch.tanh(delta_raw.to(dtype=y_num.dtype))
+        delta = self.residual_delta_scale * radius * torch.tanh(delta_raw.to(dtype=y_num.dtype))
         self.aux_loss = None
         return y_num + delta
 

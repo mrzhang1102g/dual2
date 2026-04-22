@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# FIT 纯数值流：一年预测
+# FIT num+meta: oneyear
 source /data1/miniconda3/bin/activate dualsg2
 
 python run.py \
-  --task_name fit_num \
+  --task_name fit_num_with_meta \
   --is_training 1 \
-  --model_id fit_oneyear_num \
-  --model Model_Fit_Num \
+  --model_id fit_oneyear_num_with_meta \
+  --model Model_Fit_Num_With_Meta \
   --data FIT_Meta \
   --root_path ./dataset/ \
   --data_path FIT_DualSG/fit_dualsg_all.json \

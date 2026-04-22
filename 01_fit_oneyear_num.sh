@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# FIT num only: halfyear
+# FIT num only: oneyear
 source /data1/miniconda3/bin/activate dualsg2
 
 python run.py \
   --task_name fit_num \
   --is_training 1 \
-  --model_id fit_halfyear_num \
+  --model_id fit_oneyear_num \
   --model Model_Fit_Num \
   --data FIT_Meta \
   --root_path ./dataset/ \
@@ -16,7 +16,7 @@ python run.py \
   --fit_scaler_mode train_only \
   --seq_len 48 \
   --label_len 0 \
-  --pred_len 12 \
+  --pred_len 24 \
   --train_epochs 20 \
   --batch_size 200 \
   --patience 100 \
