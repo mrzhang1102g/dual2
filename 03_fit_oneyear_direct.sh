@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# FIT fusion 关键对照：direct + load num ckpt + unfreeze + disable_text（半年）
+# FIT oneyear: direct fusion
 source /data1/miniconda3/bin/activate dualsg2
 
 python run.py \
   --task_name fit_fusion \
   --is_training 1 \
-  --model_id fit_fusion_halfyear_direct_from_ckpt_disable_text \
+  --model_id fit_oneyear_direct \
   --model Model_Fit_Fusion \
   --data FIT_Fusion \
   --root_path ./dataset/ \
@@ -16,13 +16,11 @@ python run.py \
   --fit_scaler_mode train_only \
   --seq_len 48 \
   --label_len 0 \
-  --pred_len 12 \
+  --pred_len 24 \
   --train_epochs 20 \
   --batch_size 200 \
   --patience 100 \
-  --num_model_path ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth \
   --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt \
-  --disable_text \
   --text_mode direct \
   --fusion_optimizer_mode split \
   --adjust 0 \

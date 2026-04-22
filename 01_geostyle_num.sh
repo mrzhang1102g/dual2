@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# GeoStyle num only: 52-26
+# GeoStyle: num only
 source /data1/miniconda3/bin/activate dualsg2
 
 python run.py \

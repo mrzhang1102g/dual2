@@ -1,4 +1,4 @@
-"""Geo 纯数值流模型。"""
+"""Geo numeric-only forecasting model."""
 
 import torch
 import torch.nn as nn
@@ -6,6 +6,9 @@ import torch.nn as nn
 from layers.Embed import PatchEmbedding
 from layers.SelfAttention_Family import AttentionLayer, FullAttention
 from layers.Transformer_EncDec import Encoder, EncoderLayer
+
+
+SUPPORTED_GEO_NUM_TASK = "geo_num"
 
 
 class Transpose(nn.Module):
@@ -35,8 +38,6 @@ class FlattenHead(nn.Module):
 
 
 class AdaptiveImportanceMask(nn.Module):
-    """为每个 patch 学习一个重要性权重。"""
-
     def __init__(self, d_model, num_heads):
         super().__init__()
         self.msa = nn.MultiheadAttention(embed_dim=d_model, num_heads=num_heads, batch_first=True)
@@ -49,11 +50,15 @@ class AdaptiveImportanceMask(nn.Module):
 
 
 class Model_Geo_Num(nn.Module):
-    """仅使用数值序列的 Geo 预测模型。"""
+    """Geo model that only consumes numeric time-series inputs."""
 
     def __init__(self, configs, patch_len=16, stride=8):
         super().__init__()
+
         self.task_name = configs.task_name
+        if self.task_name != SUPPORTED_GEO_NUM_TASK:
+            raise ValueError(f"Model_Geo_Num only supports task_name={SUPPORTED_GEO_NUM_TASK}, got {self.task_name}")
+
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
         self.args = configs
@@ -125,9 +130,7 @@ class Model_Geo_Num(nn.Module):
         )
 
         self.aim = AdaptiveImportanceMask(d_model=configs.d_model, num_heads=configs.n_heads)
-
-        if self.task_name in {"long_term_forecast", "short_term_forecast", "geo_num"}:
-            self.head = FlattenHead(configs.enc_in, self.head_nf, configs.pred_len, head_dropout=configs.dropout)
+        self.head = FlattenHead(configs.enc_in, self.head_nf, configs.pred_len, head_dropout=configs.dropout)
 
     def apply_patch_embeddings(self, x_enc):
         if self.args.patch_adaptive == 0:
@@ -171,7 +174,7 @@ class Model_Geo_Num(nn.Module):
 
         current_patch_num = enc_out.shape[-1]
         current_head_nf = self.args.d_model * current_patch_num
-        if hasattr(self.head, "linear") and self.head.linear.in_features != current_head_nf:
+        if self.head.linear.in_features != current_head_nf:
             self.head.linear = nn.Linear(current_head_nf, self.pred_len).to(enc_out.device)
 
         dec_out = self.head(enc_out)
@@ -181,7 +184,5 @@ class Model_Geo_Num(nn.Module):
         return dec_out
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
-        if self.task_name in {"long_term_forecast", "short_term_forecast", "geo_num"}:
-            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
-            return dec_out[:, -self.pred_len :, :]
-        return None
+        dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+        return dec_out[:, -self.pred_len :, :]

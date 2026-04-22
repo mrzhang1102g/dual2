@@ -37,6 +37,7 @@ class Model_Geo_Fusion(nn.Module):
 
         # 数值主干沿用带元数据的 Geo 模型。
         num_cfg = deepcopy(configs)
+        num_cfg.task_name = "geo_num_with_meta"
         num_cfg.use_element = True
         num_cfg.use_group = True
         num_cfg.num_element = getattr(configs, "num_element", 46)

@@ -1,12 +1,14 @@
 #!/bin/bash
 
-# FIT fusion 对照实验：direct + load num ckpt + freeze（半年）
+# FIT oneyear: residual fusion longtext
 source /data1/miniconda3/bin/activate dualsg2
+
+NUM_CKPT=./model_checkpoints/REPLACE_WITH_02_FIT_ONEYEAR_NUM_WITH_META/checkpoint.pth
 
 python run.py \
   --task_name fit_fusion \
   --is_training 1 \
-  --model_id fit_fusion_halfyear_direct_freeze \
+  --model_id fit_oneyear_residual_longtext \
   --model Model_Fit_Fusion \
   --data FIT_Fusion \
   --root_path ./dataset/ \
@@ -16,14 +18,14 @@ python run.py \
   --fit_scaler_mode train_only \
   --seq_len 48 \
   --label_len 0 \
-  --pred_len 12 \
+  --pred_len 24 \
   --train_epochs 20 \
   --batch_size 200 \
   --patience 100 \
-  --num_model_path ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth \
+  --num_model_path "$NUM_CKPT" \
   --freeze_numerical \
-  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt \
-  --text_mode direct \
+  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt \
+  --text_mode residual \
   --fusion_optimizer_mode split \
   --adjust 0 \
   --learning_rate 0.001 \

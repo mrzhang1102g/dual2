@@ -1,16 +1,14 @@
 #!/bin/bash
 
-# FIT fusion 官方 recipe：residual_correction（半年）
-# 特点：
-# - 从数值 ckpt 启动
-# - residual 纠偏
-# - 默认冻结数值流
+# FIT halfyear: residual fusion longtext
 source /data1/miniconda3/bin/activate dualsg2
+
+NUM_CKPT=./model_checkpoints/REPLACE_WITH_02_FIT_HALFYEAR_NUM_WITH_META/checkpoint.pth
 
 python run.py \
   --task_name fit_fusion \
   --is_training 1 \
-  --model_id fit_fusion_halfyear_residual_correction \
+  --model_id fit_halfyear_residual_longtext \
   --model Model_Fit_Fusion \
   --data FIT_Fusion \
   --root_path ./dataset/ \
@@ -24,9 +22,9 @@ python run.py \
   --train_epochs 20 \
   --batch_size 200 \
   --patience 100 \
-  --num_model_path ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth \
+  --num_model_path "$NUM_CKPT" \
   --freeze_numerical \
-  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt \
+  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt \
   --text_mode residual \
   --fusion_optimizer_mode split \
   --adjust 0 \

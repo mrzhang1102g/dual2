@@ -1,14 +1,12 @@
 #!/bin/bash
 
-# FIT fusion 官方 recipe：residual_correction（一年）
+# FIT halfyear: direct fusion
 source /data1/miniconda3/bin/activate dualsg2
-
-NUM_CKPT=./model_checkpoints/REPLACE_WITH_NUM_CKPT/checkpoint.pth
 
 python run.py \
   --task_name fit_fusion \
   --is_training 1 \
-  --model_id fit_fusion_oneyear_residual_correction \
+  --model_id fit_halfyear_direct \
   --model Model_Fit_Fusion \
   --data FIT_Fusion \
   --root_path ./dataset/ \
@@ -18,14 +16,12 @@ python run.py \
   --fit_scaler_mode train_only \
   --seq_len 48 \
   --label_len 0 \
-  --pred_len 24 \
-  --train_epochs 100 \
+  --pred_len 12 \
+  --train_epochs 20 \
   --batch_size 200 \
   --patience 100 \
-  --num_model_path "$NUM_CKPT" \
-  --freeze_numerical \
-  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt \
-  --text_mode residual \
+  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt \
+  --text_mode direct \
   --fusion_optimizer_mode split \
   --adjust 0 \
   --learning_rate 0.001 \

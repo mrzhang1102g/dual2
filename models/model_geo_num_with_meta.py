@@ -1,4 +1,4 @@
-"""Geo 数值流 + 元数据模型。"""
+"""Geo numeric forecasting model with optional element/group metadata."""
 
 import torch
 from torch import nn
@@ -6,6 +6,9 @@ from torch import nn
 from layers.Embed import PatchEmbedding
 from layers.SelfAttention_Family import AttentionLayer, FullAttention
 from layers.Transformer_EncDec import Encoder, EncoderLayer
+
+
+SUPPORTED_GEO_NUM_WITH_META_TASK = "geo_num_with_meta"
 
 
 class Transpose(nn.Module):
@@ -47,8 +50,6 @@ class AdaptiveImportanceMask(nn.Module):
 
 
 class ElementEmbedding(nn.Module):
-    """GeoStyle 的 element embedding。"""
-
     def __init__(self, d_model, num_elements, disable=False):
         super().__init__()
         self.disable = disable
@@ -73,8 +74,6 @@ class ElementEmbedding(nn.Module):
 
 
 class SemanticGuidance(nn.Module):
-    """可选的文本语义引导模块。"""
-
     def __init__(self, d_model, llm_dim, num_heads=4):
         super().__init__()
         self.text_proj = nn.Linear(llm_dim, d_model)
@@ -87,12 +86,18 @@ class SemanticGuidance(nn.Module):
 
 
 class Model_Geo_Num_With_Meta(nn.Module):
-    """Geo 数值流主干，可选融合 element / group / caption 语义。"""
+    """Geo model that fuses numeric series with element/group metadata."""
 
     def __init__(self, configs):
         super().__init__()
 
         self.task_name = configs.task_name
+        if self.task_name != SUPPORTED_GEO_NUM_WITH_META_TASK:
+            raise ValueError(
+                "Model_Geo_Num_With_Meta only supports "
+                f"task_name={SUPPORTED_GEO_NUM_WITH_META_TASK}, got {self.task_name}"
+            )
+
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
         self.args = configs
@@ -107,7 +112,6 @@ class Model_Geo_Num_With_Meta(nn.Module):
 
         self.use_group = getattr(configs, "use_group", True)
         self.num_group = getattr(configs, "num_group", 44)
-
         if self.use_group:
             self.group_embed = nn.Embedding(self.num_group, configs.d_model)
             nn.init.normal_(self.group_embed.weight, std=0.02)
@@ -153,7 +157,6 @@ class Model_Geo_Num_With_Meta(nn.Module):
             self.patch_embedding1 = PatchEmbedding(configs.d_model, patch_len=8, stride=4, padding=2, dropout=configs.dropout)
             self.patch_embedding2 = PatchEmbedding(configs.d_model, patch_len=16, stride=8, padding=4, dropout=configs.dropout)
             self.patch_embedding3 = PatchEmbedding(configs.d_model, patch_len=32, stride=16, padding=8, dropout=configs.dropout)
-
             self.num_patches = self.k1 + self.k2 + self.k3
 
         if self.use_tscg:
@@ -161,7 +164,11 @@ class Model_Geo_Num_With_Meta(nn.Module):
         else:
             self.semantic_guidance = None
 
-        self.element_embed = ElementEmbedding(d_model=configs.d_model, num_elements=self.num_element, disable=(not self.use_element))
+        self.element_embed = ElementEmbedding(
+            d_model=configs.d_model,
+            num_elements=self.num_element,
+            disable=(not self.use_element),
+        )
 
         if self.use_element or self.use_group:
             in_dim = configs.d_model
@@ -182,12 +189,7 @@ class Model_Geo_Num_With_Meta(nn.Module):
             [
                 EncoderLayer(
                     AttentionLayer(
-                        FullAttention(
-                            False,
-                            configs.factor,
-                            attention_dropout=configs.dropout,
-                            output_attention=False,
-                        ),
+                        FullAttention(False, configs.factor, attention_dropout=configs.dropout, output_attention=False),
                         configs.d_model,
                         configs.n_heads,
                     ),
@@ -198,11 +200,7 @@ class Model_Geo_Num_With_Meta(nn.Module):
                 )
                 for _ in range(configs.e_layers)
             ],
-            norm_layer=nn.Sequential(
-                Transpose(1, 2),
-                nn.BatchNorm1d(configs.d_model),
-                Transpose(1, 2),
-            ),
+            norm_layer=nn.Sequential(Transpose(1, 2), nn.BatchNorm1d(configs.d_model), Transpose(1, 2)),
         )
 
         self.aim = AdaptiveImportanceMask(d_model=configs.d_model, num_heads=configs.n_heads)
@@ -212,14 +210,7 @@ class Model_Geo_Num_With_Meta(nn.Module):
         else:
             head_nf = configs.d_model * self.num_patches
 
-        if self.task_name in {
-            "long_term_forecast",
-            "short_term_forecast",
-            "long_term_forecast_meta",
-            "geo_num_with_meta",
-            "geo_fusion",
-        }:
-            self.head = FlattenHead(configs.enc_in, head_nf, configs.pred_len, head_dropout=configs.dropout)
+        self.head = FlattenHead(configs.enc_in, head_nf, configs.pred_len, head_dropout=configs.dropout)
 
     def apply_patch_embeddings(self, x_enc):
         if self.patch_adaptive == 0:
@@ -288,7 +279,7 @@ class Model_Geo_Num_With_Meta(nn.Module):
 
         current_patch_num = enc_out.shape[-1]
         current_head_nf = self.d_model * current_patch_num
-        if hasattr(self.head, "linear") and self.head.linear.in_features != current_head_nf:
+        if self.head.linear.in_features != current_head_nf:
             self.head.linear = nn.Linear(current_head_nf, self.pred_len).to(enc_out.device)
 
         dec_out = self.head(enc_out)
@@ -306,32 +297,14 @@ class Model_Geo_Num_With_Meta(nn.Module):
         element_ids=None,
         group_ids=None,
         caption_emb=None,
-        city_ids=None,
-        gender_ids=None,
-        age_ids=None,
-        **kwargs,
     ):
-        del gender_ids, age_ids, kwargs
-
-        if self.task_name in {
-            "long_term_forecast",
-            "short_term_forecast",
-            "long_term_forecast_meta",
-            "geo_num_with_meta",
-            "geo_fusion",
-        }:
-            # 向后兼容：旧调用里如果还传 city_ids，就把它视为 group_ids。
-            if group_ids is None and city_ids is not None:
-                group_ids = city_ids
-
-            dec_out = self.forecast(
-                x_enc,
-                x_mark_enc=x_mark_enc,
-                x_dec=x_dec,
-                x_mark_dec=x_mark_dec,
-                element_ids=element_ids,
-                group_ids=group_ids,
-                caption_emb=caption_emb,
-            )
-            return dec_out[:, -self.pred_len :, :]
-        return None
+        dec_out = self.forecast(
+            x_enc,
+            x_mark_enc=x_mark_enc,
+            x_dec=x_dec,
+            x_mark_dec=x_mark_dec,
+            element_ids=element_ids,
+            group_ids=group_ids,
+            caption_emb=caption_emb,
+        )
+        return dec_out[:, -self.pred_len :, :]

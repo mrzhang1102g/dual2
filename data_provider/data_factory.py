@@ -99,6 +99,7 @@ def data_provider(args, flag):
             train_ratio=getattr(args, "train_ratio", 0.7),
             val_ratio=getattr(args, "val_ratio", 0.1),
             test_ratio=getattr(args, "test_ratio", 0.2),
+            max_samples=split_limit,
         )
 
     # Geo 数值流：可选 element/group 元数据。
@@ -117,6 +118,7 @@ def data_provider(args, flag):
             train_ratio=getattr(args, "train_ratio", 0.7),
             val_ratio=getattr(args, "val_ratio", 0.1),
             test_ratio=getattr(args, "test_ratio", 0.2),
+            max_samples=split_limit,
         )
     else:
         raise NotImplementedError(f"Unhandled dataset type: {args.data}")

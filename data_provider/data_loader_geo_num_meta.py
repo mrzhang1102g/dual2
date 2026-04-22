@@ -29,6 +29,7 @@ class Dataset_DualSG_Geo_Num_Meta(Dataset):
         train_ratio=0.7,
         val_ratio=0.1,
         test_ratio=0.2,
+        max_samples=-1,
     ):
         del scale, timeenc, freq, seasonal_patterns, test_ratio
         assert flag in ["train", "val", "test"]
@@ -41,6 +42,7 @@ class Dataset_DualSG_Geo_Num_Meta(Dataset):
         self.use_element = use_element
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
+        self.max_samples = max_samples
 
         if size is None:
             self.seq_len = 52
@@ -64,6 +66,9 @@ class Dataset_DualSG_Geo_Num_Meta(Dataset):
             data_list = full_data[start:end]
         else:
             data_list = full_data
+
+        if self.max_samples is not None and self.max_samples > 0:
+            data_list = data_list[: self.max_samples]
 
         self.element_map, self.group_map = build_metadata_maps(full_data)
 

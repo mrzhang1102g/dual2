@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# GeoStyle: num+meta
+# GeoStyle: residual fusion longtext
 source /data1/miniconda3/bin/activate dualsg2
 
 python run.py \
-  --task_name geo_num_with_meta \
+  --task_name geo_fusion \
   --is_training 1 \
-  --model_id geostyle_num_with_meta \
-  --model Model_Geo_Num_With_Meta \
-  --data Geo_Meta \
+  --model_id geostyle_residual_longtext \
+  --model Model_Geo_Fusion \
+  --data Geo_Fusion \
   --root_path ./dataset/ \
   --data_path Geo_DualSG/geo_dualsg_all.json \
   --inverse \
@@ -19,8 +19,11 @@ python run.py \
   --train_epochs 20 \
   --batch_size 200 \
   --patience 100 \
-  --use_element \
-  --use_group \
+  --caption_emb_path ./dataset/Geo_DualSG/pt/geo_dualsg_all.pt \
+  --text_mode residual \
+  --llm_dim 768 \
+  --num_feat_dim 52 \
+  --patch_adaptive 1 \
   --visualize False \
   --output_dir ./model_outputs/ \
   --checkpoint_dir ./model_checkpoints/

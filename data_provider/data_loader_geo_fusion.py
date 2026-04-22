@@ -35,6 +35,7 @@ class Dataset_DualSG_Geo_Fusion(Dataset):
         val_ratio=0.1,
         test_ratio=0.2,
         use_element=False,
+        max_samples=-1,
     ):
         del scale, timeenc, freq, seasonal_patterns, test_ratio
         assert flag in ["train", "val", "test"]
@@ -50,6 +51,7 @@ class Dataset_DualSG_Geo_Fusion(Dataset):
         self.caption_emb_path = caption_emb_path
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
+        self.max_samples = max_samples
 
         if size is None:
             self.seq_len = 52
@@ -78,6 +80,10 @@ class Dataset_DualSG_Geo_Fusion(Dataset):
         else:
             data_list = full_data
             self.sample_indices = list(range(total))
+
+        if self.max_samples is not None and self.max_samples > 0:
+            data_list = data_list[: self.max_samples]
+            self.sample_indices = self.sample_indices[: self.max_samples]
 
         self.element_map, self.group_map = build_metadata_maps(full_data)
         if len(self.element_map) == 0 or len(self.group_map) == 0:

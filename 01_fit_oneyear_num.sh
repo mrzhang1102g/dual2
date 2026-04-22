@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# FIT num only: oneyear
+# FIT oneyear: num only
 source /data1/miniconda3/bin/activate dualsg2
 
 python run.py \
