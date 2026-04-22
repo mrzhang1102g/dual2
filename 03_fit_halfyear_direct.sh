@@ -17,10 +17,10 @@ python run.py \
   --seq_len 48 \
   --label_len 0 \
   --pred_len 12 \
-  --train_epochs 20 \
+  --train_epochs 100 \
   --batch_size 200 \
   --patience 100 \
-  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_random_text.pt \
+  --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_structured.pt \
   --text_mode direct \
   --fusion_optimizer_mode split \
   --adjust 0 \

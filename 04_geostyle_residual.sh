@@ -16,7 +16,7 @@ python run.py \
   --seq_len 52 \
   --label_len 0 \
   --pred_len 26 \
-  --train_epochs 20 \
+  --train_epochs 100 \
   --batch_size 200 \
   --patience 100 \
   --caption_emb_path ./dataset/Geo_DualSG/pt/geo_dualsg_all.pt \
