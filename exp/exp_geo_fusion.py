@@ -87,6 +87,23 @@ class Exp_Geo_Fusion(Exp_Basic):
         dec_inp = torch.cat([batch_y[:, : self.args.label_len, :], dec_inp], dim=1).to(self.device)
         return dec_inp
 
+    def _save_test_outputs(self, setting, preds, trues, metrics_tuple):
+        result_folder = os.path.join(self.args.output_dir, setting, "results")
+        os.makedirs(result_folder, exist_ok=True)
+
+        mae, mse, rmse, mape, mspe, wape = metrics_tuple
+        with open(os.path.join(result_folder, "result.txt"), "w", encoding="utf-8") as file:
+            file.write(setting + "  \n")
+            file.write(
+                f"MAE: {mae:.6f}, MSE: {mse:.6f}, RMSE: {rmse:.6f}, "
+                f"MAPE: {mape * 100:.2f}%, WAPE: {wape * 100:.2f}%"
+            )
+            file.write("\n\n")
+
+        np.save(os.path.join(result_folder, "metrics.npy"), np.array(metrics_tuple, dtype=np.float32))
+        np.save(os.path.join(result_folder, "pred.npy"), preds)
+        np.save(os.path.join(result_folder, "true.npy"), trues)
+
     def vali(self, vali_loader, criterion):
         self.model.eval()
         losses = []
@@ -198,13 +215,15 @@ class Exp_Geo_Fusion(Exp_Basic):
 
         self.model.eval()
         preds, trues = [], []
-
-        result_folder = os.path.join(self.args.output_dir, setting, "results")
-        os.makedirs(result_folder, exist_ok=True)
+        max_n = int(getattr(self.args, "max_test_samples", -1) or -1)
+        seen = 0
 
         vis_folder = os.path.join(self.args.output_dir, setting, "visualizations")
         if self.args.visualize:
             os.makedirs(vis_folder, exist_ok=True)
+            self.log(f"[TEST] Batch-level PDFs will be saved to: {vis_folder}")
+        if max_n > 0:
+            self.log(f"[TEST] Will evaluate only first {max_n} test samples.")
 
         start_time = time.time()
 
@@ -233,28 +252,44 @@ class Exp_Geo_Fusion(Exp_Basic):
                 pred_denorm = pred * (max_v - min_v) + min_v
                 true_denorm = true * (max_v - min_v) + min_v
 
-                preds.append(pred_denorm.detach().cpu().numpy())
-                trues.append(true_denorm.detach().cpu().numpy())
+                pred_np = pred_denorm.detach().cpu().numpy()
+                true_np = true_denorm.detach().cpu().numpy()
 
-                if self.args.visualize and i % 20 == 0:
-                    input_x = batch_x.detach().cpu().numpy()
+                if max_n > 0:
+                    remain = max_n - seen
+                    if remain <= 0:
+                        break
+                    if pred_np.shape[0] > remain:
+                        pred_np = pred_np[:remain]
+                        true_np = true_np[:remain]
+
+                preds.append(pred_np)
+                trues.append(true_np)
+                seen += pred_np.shape[0]
+
+                if self.args.visualize and i % 20 == 0 and pred_np.shape[0] > 0:
+                    keep_b = pred_np.shape[0]
+                    input_x = batch_x.detach().cpu().numpy()[:keep_b]
                     min_v_np = min_v.detach().cpu().numpy()
                     max_v_np = max_v.detach().cpu().numpy()
-                    input_denorm = input_x * (max_v_np - min_v_np) + min_v_np
-
-                    pred_np = pred_denorm.detach().cpu().numpy()
-                    true_np = true_denorm.detach().cpu().numpy()
+                    input_denorm = input_x * (max_v_np[:keep_b] - min_v_np[:keep_b]) + min_v_np[:keep_b]
 
                     gt = np.concatenate((input_denorm[0, :, -1], true_np[0, :, -1]), axis=0)
                     pd = np.concatenate((input_denorm[0, :, -1], pred_np[0, :, -1]), axis=0)
-                    visual(gt, pd, os.path.join(vis_folder, f"{i}.pdf"), history_len=input_denorm.shape[1])
+                    pdf_path = os.path.join(vis_folder, f"{i}.pdf")
+                    visual(gt, pd, pdf_path, history_len=input_denorm.shape[1])
+                    self.log(f"[TEST][PDF] Saved batch-level PDF: {pdf_path}")
+
+                if max_n > 0 and seen >= max_n:
+                    break
 
         self.log(f"Inference time: {time.time() - start_time:.2f}s")
 
-        preds = np.concatenate(preds, axis=0)
-        trues = np.concatenate(trues, axis=0)
+        preds = np.concatenate(preds, axis=0) if preds else np.array([])
+        trues = np.concatenate(trues, axis=0) if trues else np.array([])
 
-        mae, mse, rmse, mape, mspe, wape = metric(preds, trues)
+        metrics_tuple = metric(preds, trues)
+        mae, mse, rmse, mape, mspe, wape = metrics_tuple
 
         self.log("\n" + "=" * 50)
         self.log("Test Results (GeoStyle Fusion)")
@@ -267,12 +302,13 @@ class Exp_Geo_Fusion(Exp_Basic):
         self.log(f"WAPE: {wape * 100:.2f}%")
         self.log("=" * 50)
 
-        np.save(os.path.join(result_folder, "metrics.npy"), np.array([mae, mse, rmse, mape, mspe, wape]))
-        np.save(os.path.join(result_folder, "pred.npy"), preds)
-        np.save(os.path.join(result_folder, "true.npy"), trues)
+        self._save_test_outputs(setting, preds, trues, metrics_tuple)
 
-        self._plot_predictions(preds, trues, setting, mae=mae, mse=mse, rmse=rmse, mape=mape, wape=wape)
-        return mae, mse, rmse, mape, mspe, wape
+        if self.args.visualize and preds.size > 0:
+            self._plot_predictions(preds, trues, setting, mae=mae, mse=mse, rmse=rmse, mape=mape, wape=wape)
+            self.log(f"[TEST][PDF] Saved summary PDF: {os.path.join(self.args.output_dir, setting, 'reports', 'predictions.pdf')}")
+
+        return metrics_tuple
 
     def _plot_predictions(self, preds, trues, setting, mae, mse, rmse, mape, wape, num_samples=10):
         """导出汇总 PDF，包含散点图、误差分布和样本曲线。"""

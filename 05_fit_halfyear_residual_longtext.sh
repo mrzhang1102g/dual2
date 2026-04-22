@@ -23,7 +23,6 @@ python run.py \
   --batch_size 200 \
   --patience 100 \
   --num_model_path "$NUM_CKPT" \
-  --freeze_numerical \
   --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_longtext.pt \
   --text_mode residual \
   --fusion_optimizer_mode split \

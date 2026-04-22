@@ -74,6 +74,23 @@ class Exp_Geo_Num(Exp_Basic):
         dec_inp = torch.cat([batch_y[:, : self.args.label_len, :], dec_inp], dim=1).to(self.device)
         return dec_inp
 
+    def _save_test_outputs(self, setting, preds, trues, metrics_tuple):
+        result_folder = os.path.join(self.args.output_dir, setting, "results")
+        os.makedirs(result_folder, exist_ok=True)
+
+        mae, mse, rmse, mape, mspe, wape = metrics_tuple
+        with open(os.path.join(result_folder, "result.txt"), "w", encoding="utf-8") as file:
+            file.write(setting + "  \n")
+            file.write(
+                f"MAE: {mae:.6f}, MSE: {mse:.6f}, RMSE: {rmse:.6f}, "
+                f"MAPE: {mape * 100:.2f}%, WAPE: {wape * 100:.2f}%"
+            )
+            file.write("\n\n")
+
+        np.save(os.path.join(result_folder, "metrics.npy"), np.array(metrics_tuple, dtype=np.float32))
+        np.save(os.path.join(result_folder, "pred.npy"), preds)
+        np.save(os.path.join(result_folder, "true.npy"), trues)
+
     def _forward_model(self, batch_x, batch_x_mark, dec_inp, batch_y_mark, element_ids, group_ids):
         module = self.model.module if hasattr(self.model, "module") else self.model
 
@@ -197,12 +214,15 @@ class Exp_Geo_Num(Exp_Basic):
             )
 
         preds, trues = [], []
-        result_folder = os.path.join(self.args.output_dir, setting, "results")
-        os.makedirs(result_folder, exist_ok=True)
+        max_n = int(getattr(self.args, "max_test_samples", -1) or -1)
+        seen = 0
 
         vis_folder = os.path.join(self.args.output_dir, setting, "visualizations")
         if self.args.visualize:
             os.makedirs(vis_folder, exist_ok=True)
+            self.log(f"[TEST] Batch-level PDFs will be saved to: {vis_folder}")
+        if max_n > 0:
+            self.log(f"[TEST] Will evaluate only first {max_n} test samples.")
 
         self.model.eval()
         start_time = time.time()
@@ -231,32 +251,48 @@ class Exp_Geo_Num(Exp_Basic):
                 pred_denorm = outputs * (max_v - min_v) + min_v
                 true_denorm = batch_y_cut * (max_v - min_v) + min_v
 
-                preds.append(pred_denorm.detach().cpu().numpy())
-                trues.append(true_denorm.detach().cpu().numpy())
+                pred_np = pred_denorm.detach().cpu().numpy()
+                true_np = true_denorm.detach().cpu().numpy()
 
-                if self.args.visualize and i % 20 == 0:
-                    input_x = batch_x.detach().cpu().numpy()
+                if max_n > 0:
+                    remain = max_n - seen
+                    if remain <= 0:
+                        break
+                    if pred_np.shape[0] > remain:
+                        pred_np = pred_np[:remain]
+                        true_np = true_np[:remain]
+
+                preds.append(pred_np)
+                trues.append(true_np)
+                seen += pred_np.shape[0]
+
+                if self.args.visualize and i % 20 == 0 and pred_np.shape[0] > 0:
+                    keep_b = pred_np.shape[0]
+                    input_x = batch_x.detach().cpu().numpy()[:keep_b]
                     min_v_np = min_v.detach().cpu().numpy()
                     max_v_np = max_v.detach().cpu().numpy()
-                    input_denorm = input_x * (max_v_np - min_v_np) + min_v_np
-
-                    pred_np = pred_denorm.detach().cpu().numpy()
-                    true_np = true_denorm.detach().cpu().numpy()
+                    input_denorm = input_x * (max_v_np[:keep_b] - min_v_np[:keep_b]) + min_v_np[:keep_b]
 
                     gt = np.concatenate((input_denorm[0, :, -1], true_np[0, :, -1]), axis=0)
                     pd = np.concatenate((input_denorm[0, :, -1], pred_np[0, :, -1]), axis=0)
-                    visual(gt, pd, os.path.join(vis_folder, f"{i}.pdf"), history_len=input_denorm.shape[1])
+                    pdf_path = os.path.join(vis_folder, f"{i}.pdf")
+                    visual(gt, pd, pdf_path, history_len=input_denorm.shape[1])
+                    self.log(f"[TEST][PDF] Saved batch-level PDF: {pdf_path}")
+
+                if max_n > 0 and seen >= max_n:
+                    break
 
         self.log(f"Inference time: {time.time() - start_time:.2f}s")
 
-        preds = np.concatenate(preds, axis=0)
-        trues = np.concatenate(trues, axis=0)
+        preds = np.concatenate(preds, axis=0) if preds else np.array([])
+        trues = np.concatenate(trues, axis=0) if trues else np.array([])
 
-        if self.args.inverse:
+        if self.args.inverse and preds.size > 0:
             preds = test_data.inverse_transform(preds)
             trues = test_data.inverse_transform(trues)
 
-        mae, mse, rmse, mape, mspe, wape = metric(preds, trues)
+        metrics_tuple = metric(preds, trues)
+        mae, mse, rmse, mape, mspe, wape = metrics_tuple
 
         self.log("\n" + "=" * 50)
         self.log("Test Results (GeoStyle)")
@@ -269,17 +305,76 @@ class Exp_Geo_Num(Exp_Basic):
         self.log(f"WAPE: {wape * 100:.2f}%")
         self.log("=" * 50 + "\n")
 
-        np.save(os.path.join(result_folder, "metrics.npy"), np.array([mae, mse, rmse, mape, mspe, wape]))
-        np.save(os.path.join(result_folder, "pred.npy"), preds)
-        np.save(os.path.join(result_folder, "true.npy"), trues)
+        self._save_test_outputs(setting, preds, trues, metrics_tuple)
 
-        result_file_path = os.path.join(result_folder, "result.txt")
-        with open(result_file_path, "w", encoding="utf-8") as file:
-            file.write(setting + "  \n")
-            file.write(
-                f"MAE: {mae:.6f}, MSE: {mse:.6f}, RMSE: {rmse:.6f}, "
-                f"MAPE: {mape * 100:.2f}%, WAPE: {wape * 100:.2f}%"
+        if self.args.visualize and preds.size > 0:
+            self._plot_predictions(preds, trues, setting, mae, mse, rmse, mape, wape)
+            self.log(f"[TEST][PDF] Saved summary PDF: {os.path.join(self.args.output_dir, setting, 'reports', 'predictions.pdf')}")
+
+        return metrics_tuple
+
+    def _plot_predictions(self, preds, trues, setting, mae, mse, rmse, mape, wape, num_samples=10):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+
+        reports_folder = os.path.join(self.args.output_dir, setting, "reports")
+        os.makedirs(reports_folder, exist_ok=True)
+        pdf_path = os.path.join(reports_folder, "predictions.pdf")
+
+        np.random.seed(self.args.seed)
+        total_samples = preds.shape[0]
+        sample_indices = np.random.choice(total_samples, min(num_samples, total_samples), replace=False)
+
+        with PdfPages(pdf_path) as pdf:
+            fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+            fig.suptitle(f"Model_Geo_Num Prediction Results\n{setting}", fontsize=14)
+
+            ax = axes[0, 0]
+            ax.scatter(trues.flatten()[::100], preds.flatten()[::100], alpha=0.3, s=1)
+            ax.plot([trues.min(), trues.max()], [trues.min(), trues.max()], "r--", lw=2)
+            ax.set_title("Prediction vs Ground Truth")
+
+            ax = axes[0, 1]
+            errors = preds.flatten() - trues.flatten()
+            ax.hist(errors, bins=50, edgecolor="black", alpha=0.7)
+            ax.axvline(x=0, color="r", linestyle="--")
+            ax.set_title(f"Error Distribution (Mean: {errors.mean():.4f})")
+
+            ax = axes[1, 0]
+            mae_per_step = np.mean(np.abs(preds - trues), axis=0).squeeze()
+            ax.bar(range(len(mae_per_step)), mae_per_step)
+            ax.set_title("MAE per Prediction Step")
+
+            ax = axes[1, 1]
+            ax.axis("off")
+            table = ax.table(
+                cellText=[
+                    ["MAE", f"{mae:.6f}"],
+                    ["MSE", f"{mse:.6f}"],
+                    ["RMSE", f"{rmse:.6f}"],
+                    ["MAPE", f"{mape * 100:.2f}%"],
+                    ["WAPE", f"{wape * 100:.2f}%"],
+                ],
+                colLabels=["Metric", "Value"],
+                loc="center",
+                cellLoc="center",
             )
-            file.write("\n\n")
+            table.scale(1.2, 1.5)
 
-        return mae, mse, rmse, mape, mspe, wape
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close()
+
+            for index in sample_indices:
+                fig, ax = plt.subplots(figsize=(12, 4))
+                ax.plot(trues[index].squeeze(), label="GT")
+                ax.plot(preds[index].squeeze(), label="Pred")
+                ax.legend()
+                ax.set_title(f"Sample {index}")
+                pdf.savefig(fig)
+                plt.close()
+
+        self.log(f"Predictions PDF saved to: {pdf_path}")

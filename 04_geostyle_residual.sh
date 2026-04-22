@@ -3,6 +3,8 @@
 # GeoStyle: residual fusion
 source /data1/miniconda3/bin/activate dualsg2
 
+NUM_CKPT=./model_checkpoints/REPLACE_WITH_02_GEOSTYLE_NUM_WITH_META/checkpoint.pth
+
 python run.py \
   --task_name geo_fusion \
   --is_training 1 \
@@ -19,6 +21,7 @@ python run.py \
   --train_epochs 100 \
   --batch_size 200 \
   --patience 100 \
+  --num_model_path "$NUM_CKPT" \
   --caption_emb_path ./dataset/Geo_DualSG/pt/geo_dualsg_all.pt \
   --text_mode residual \
   --llm_dim 768 \

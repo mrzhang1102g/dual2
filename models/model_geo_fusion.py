@@ -45,8 +45,12 @@ class Model_Geo_Fusion(nn.Module):
 
         self.numerical_model = GeoNumericalModel(num_cfg)
 
-        if numerical_ckpt_path is not None:
-            ckpt = torch.load(numerical_ckpt_path, map_location="cpu")
+        ckpt_path = numerical_ckpt_path
+        if isinstance(ckpt_path, str):
+            ckpt_path = ckpt_path.strip()
+
+        if ckpt_path:
+            ckpt = torch.load(ckpt_path, map_location="cpu")
             if isinstance(ckpt, dict) and "state_dict" in ckpt:
                 ckpt = ckpt["state_dict"]
             self.numerical_model.load_state_dict(ckpt, strict=False)
