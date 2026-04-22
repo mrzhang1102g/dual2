@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# FIT legacy fusion 诊断：legacy residual + load num ckpt + unfreeze（半年，真实长文本）
+# FIT fusion reference run: residual + load numerical ckpt + real text captions
 source /data1/miniconda3/bin/activate dualsg2
 
 python run.py \
   --task_name fit_fusion \
   --is_training 1 \
-  --model_id fit_fusion_halfyear_legacy_residual_unfreeze \
+  --model_id fit_fusion_halfyear_residual_unfreeze_real_text \
   --model Model_Fit_Fusion \
   --data FIT_Fusion \
   --root_path ./dataset/ \
@@ -22,7 +22,6 @@ python run.py \
   --patience 100 \
   --num_model_path ./model_checkpoints/fit_halfyear_num_with_meta_20260413_083428/checkpoint.pth \
   --caption_emb_path ./dataset/FIT_DualSG/pt/fit_dualsg_all.pt \
-  --fusion_version legacy \
   --text_mode residual \
   --fusion_optimizer_mode split \
   --adjust 0 \

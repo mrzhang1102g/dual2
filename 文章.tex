@@ -1,0 +1,559 @@
+% sage_latex_guidelines.tex V1.20, 14 January 2017
+\documentclass[Afour,sageh,times]{sagej}
+\usepackage{moreverb,url}
+\usepackage[colorlinks,bookmarksopen,bookmarksnumbered,citecolor=red,urlcolor=red]{hyperref}
+% \usepackage[hidelinks]{hyperref} % 隐藏所有链接的颜色和边框
+\usepackage{multirow}
+
+\newcommand\BibTeX{{\rmfamily B\kern-.05em \textsc{i\kern-.025em b}\kern-.08em
+T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\def\volumeyear{2016}
+
+\newcommand{\cui}[1]{\textcolor{blue}{[revise] #1}}
+\newcommand{\zhang}[1]{\textcolor{red}{[revise] #1}}
+
+\begin{document}
+\runninghead{Smith and Wittkopf}
+\title{From Popularity Signals to Semantic Descriptions: Dual-Stream Driven Fashion Trend Forecasting}
+
+\author{XX\affilnum{1} and XX\affilnum{1}}
+
+\affiliation{\affilnum{1} XX
+% \\
+% \affilnum{2}XX}
+\corrauth{XX}
+\email{XX}
+
+\begin{abstract}
+% Fashion trend forecasting constitutes a crucial task for both academia and industry, particularly requiring accurate and interpretable prediction of fine-grained fashion element trends with clear differentiation across distinct customer segments
+% Existing approaches largely rely on single-stream numerical time-series modeling. Although effective in capturing statistical temporal patterns, they fail to explicitly leverage high-level semantic information underlying trend evolution, resulting in delayed or weakened prediction of critical trend turning points. To address this limitation, we propose a novel dual-stream–driven fashion trend prediction model that jointly integrates a numerical forecasting stream and a textual semantic stream. The numerical stream deeply models temporal dynamics from historical popularity sequences, while the semantic stream transforms historical trends into semantically enriched textual descriptions that emphasize turning points through carefully designed prompt templates, enabling the capture of high-level knowledge about why trends change. The two streams are deeply fused to jointly guide future trend prediction. Experiments on real-world fashion datasets spanning multiple user groups demonstrate that the proposed model significantly outperforms mainstream baselines in overall forecasting accuracy, and achieves more accurate and timely performance in trend turning-point prediction. 
+% Accurate and interpretable fashion trend forecasting is essential for catering to fine-grained elements and distinct customer groups.
+
+Fashion trend forecasting is a pivotal task for both academia and industry. Accurate and interpretable fashion trend forecasting is essential for catering to fine-grained elements and distinct customer groups. However, conventional single-stream numerical models often fail to anticipate trend turning points because they cannot explicitly leverage the high-level semantic context underlying fashion shifts. 
+To bridge this gap, we propose a novel dual-stream driven fashion trend forecasting (DDFTF) model that synergizes numerical forecasting with textual semantic insights. 
+Specifically, the numerical stream captures temporal dynamics from historical popularity data, while the semantic stream translates historical shifts into enriched textual descriptions via tailored prompt templates, capturing the underlying logic of trend transitions. 
+By deeply fusing these dual perspectives, our model aligns statistical signals with semantic knowledge. 
+Experiments on real-world fashion datasets spanning multiple user groups demonstrate that our approach significantly outperforms state-of-the-art baselines in overall accuracy and exhibits superior sensitivity in predicting trend turning points.
+
+\end{abstract}
+
+\keywords{Fashion trend forecasting, Time series forecasting, Multimodal learning, Consumer behavior analysis}
+
+\maketitle
+
+\section{Introduction}
+The fashion industry~\cite{choi2014fast, jin2021power, imtiaz2024review} is a multi-trillion dollar global market where accurate trend forecasting plays a strategic role in supply chain management~\cite{choi2015sustainable}, product design~\cite{gornostaeva2023development}, and marketing~\cite{zahran2025impact}. Crucially, recent research highlights the urgent need for sustainable production practices to mitigate the growing crisis of textile waste~\cite{shi2021exploration, abrishami2024textile}. Within this context, precise forecasting facilitates on-demand manufacturing, minimizing textile waste from overstocking and demand mismatches. However, the rise of e-commerce and personalized preferences necessitates more sophisticated data-driven insights to navigate today’s fragmented market~\cite{imtiaz2024review, avogaro2025new}.
+
+\begin{figure}
+\centering \includegraphics[width=\linewidth]{figures/motivation.png} \caption{The fashion trend forecasting task aims to predict future popularity trajectories of specific fashion elements. Unlike traditional methods that rely solely on numerical streams, our approach fuses textual explanations to enhance forecasting performance and interpretability.} 
+\label{fig:motivation} 
+\end{figure}
+
+% To address these forecasting challenges, the field has historically relied on numerical modeling as the dominant paradigm, evolving from statistical methods to machine learning approaches like SVMs \cite{sun2008sales}. The advent of deep learning further advanced the field, with standard neural networks \cite{loureiro2018exploring} and LSTMs \cite{singh2019fashion} effectively capturing non-linear sequential patterns. Recently, specialized architectures such as N-BEATS \cite{oreshkin2019n}, and Transformer-based models \cite{lim2021temporal} have achieved SOTA precision in mining statistical regularities from historical data.
+To meet these evolving demands, the field has traditionally relied on numerical modeling.
+Early methodologies primarily leveraged classical statistical models and machine learning techniques, such as SVMs~\cite{sun2008sales}, to identify basic trend patterns. The integration of deep learning represented a major leap forward, as standard neural networks~\cite{loureiro2018exploring} and Recurrent Neural Networks (RNNs) like LSTMs~\cite{singh2019fashion} began to effectively decode the complex, non-linear dynamics inherent in fashion sequences. More recently, the field has been further transformed by high-capacity architectures: specialized decomposition models like N-BEATS~\cite{oreshkin2019n} and attention-based Transformers~\cite{lim2021temporal} have achieved state-of-the-art (SOTA) precision by mining deep statistical regularities and long-range dependencies from historical popularity data.
+
+Building upon these algorithmic advancements, trend forecasting systems~\cite{xu2021sportswear,ding2023computational, xu2024diffusion} have been tailored to help designers and retailers proactively navigate volatile consumer preferences. By decoding complex patterns into actionable trajectories, these systems empower businesses to optimize design cycles and inventory management. Research in this domain has evolved toward higher spatial and temporal resolution; for example, \citet{mall2019geostyle} introduced an automated framework to discover long-term trends and localized spatio-temporal events by analyzing massive corpora of street imagery. A significant milestone was achieved by \citet{ma2020knowledge}, who formally operationalized the task of fine-grained fashion trend forecasting. Their work shifted the focus toward predicting the popularity evolution of specific fashion elements within heterogeneous user groups (defined by age, gender, and city) by integrating internal sequence data with external knowledge bases.
+
+Despite these foundational advancements, a critical gap remains: current methodologies predominantly rely on historical popularity data, whereas contemporary fashion consumption is increasingly catalyzed by social media narratives and semantic contexts~\cite{cabeza2023exploring}.  As a result, existing numerical-stream methods often struggle to leverage high-level semantic insights. As illustrated by the ``turtleneck" trend in Figure~\ref{fig:motivation}, exogenous shocks, such as celebrity-driven popularity surges, are often misidentified by traditional models as transient noise or seasonal fluctuations. This semantic blind spot precipitates significant forecasting failures at critical inflection points, which are precisely the junctures that dictate commercial success. Consequently, achieving superior predictive accuracy hinges on transcending simple numerical extrapolation to effectively distinguish meaningful semantic transitions from stochastic noise.
+
+Fortunately, the Transformer architecture \cite{vaswani2017attention} has revolutionized sequence modeling, enabling Pre-trained Language Models (PLMs) like BERT \cite{devlin2018bert} to master complex semantic reasoning. Recent studies \cite{zhou2023one} further demonstrate that Large Language Models (LLMs) possess an innate ability to process time-series data and generalize across domains. 
+
+To address these limitations fundamentally, we propose a new paradigm that synergistically integrates data-driven modeling with semantic understanding. 
+% \zhang{Building upon the established utility of Artificial Intelligence in textile predictive analytics~\cite{ismail2020ai}, our work extends this capability from physical quality assurance to the semantic interpretation of market trends.}
+We argue that an ideal forecasting system should not only predict \emph{how} trends will evolve (quantitative prediction) but also characterize \emph{why} such evolution occurs (semantic interpretation). To this end, we introduce a novel dual-stream driven fashion trend forecasting (DDFTF) model that incorporates two functionally complementary components: a numerical forecasting stream and a textual semantic stream.
+
+The numerical stream captures fine-grained temporal dynamics through multi-scale temporal segmentation and metadata-aware feature fusion. In parallel, the textual stream converts historical numerical trends into semantically enriched textual descriptions using prompt-based generation and pretrained language encoding, injecting interpretable high-level knowledge into forecasting. A dedicated fusion module then jointly integrates both streams to predict future popularity trends.
+
+The main contributions of this work are as follows:
+
+(1) We introduce a numerical forecasting stream that jointly leverages multi-scale historical temporal patches and metadata-aware feature fusion, facilitating fine-grained temporal modeling under diverse user group distributions.
+
+(2) We propose a textual semantic stream that distills global trend semantics and critical turning-point information from historical popularity sequences.
+
+(3) We present a dual-stream driven fusion framework that combines numerical temporal modeling with textual semantic reasoning, enabling the model to capture not only how trends evolve but also why they evolve.
+
+\section{Related Work}
+\subsection{Fashion Trend Forecasting and Analysis}
+Research in the fashion domain has shifted from static recognition to dynamic trend analysis. Early efforts primarily focused on descriptive analytics, such as detecting clothing attributes from runway shows \cite{vittayakorn2015runway, al2017fashion} or mapping the spatio-temporal distribution of street styles \cite{mall2019geostyle, matzen2017streetstyle}. While effective at quantifying current aesthetics, these methods lack predictive foresight. To address this, recent studies have transitioned toward proactive modeling; notably, GeoStyle \cite{mall2019geostyle} employs periodic functions to forecast attribute popularity. To enhance robustness, knowledge-aware frameworks like KERN \cite{ma2020knowledge} and REAR \cite{ding2021leveraging} incorporate structural domain knowledge (e.g., category hierarchies) to stabilize predictions across heterogeneous user groups. Despite these strides, most fashion-specific models remain tethered to numerical signals. They often fail to capture the underlying semantic drivers, resulting in ``lagging" predictions that struggle to anticipate abrupt trend inflections.
+
+\subsection{Time Series Forecasting Model}
+
+General time series forecasting has evolved from traditional statistical methods to sophisticated deep learning architectures \cite{lea2016temporal, wang2018attentive}. While classical models like ARIMA \cite{box2015time} perform well in stationary environments, they often falter when faced with the inherent non-stationarity and volatility of fashion data. Deep learning approaches, particularly LSTMs \cite{salinas2020deepar} and Transformers \cite{wang2023destformer, su2025systematic}, have set new benchmarks by capturing long-range dependencies. However, these "black-box" models frequently suffer from a lack of interpretability and an inability to assimilate high-level conceptual knowledge. To bridge this gap, emerging research has pivoted toward semantic-aware forecasting and time-series captioning \cite{jhamtani2021truth, trabelsi2025time}. Frameworks such as TESSA \cite{lin2024decoding} and DualSG \cite{ding2025dualsg} suggest that natural language descriptions can provide structural priors for numerical models. Nevertheless, these methods are predominantly general-purpose and remain agnostic to the metadata-rich, fine-grained nuances of the fashion industry. Consequently, a significant opportunity remains to integrate numerical precision with semantic reasoning, enabling a more holistic and explanatory approach to fashion trend evolution.
+
+\section{Problem Formulation}
+
+Consistent with the framework established by \citet{ma2020knowledge}, we define the task of fine-grained fashion forecasting as predicting the temporal evolution of style elements across diverse user segments.
+Let $\mathcal{F} = \{f_1, f_2, \dots, f_M\}$ denote a set of $M$ fine-grained fashion elements (e.g., white, high-neck), and $\mathcal{G} = \{g_1, g_2, \dots, g_{K}\}$ represent a set of $K$ specific user groups defined by demographic attributes such as age, gender, and city. For a given fashion element $f \in \mathcal{F}$ and a user group $g \in \mathcal{G}$, the historical popularity is represented as a time series $\mathbf{y}_{t} = N^{g,f}_t/N_t^g$, where $N^{g,f}_t$ denotes the number of occurrences of fashion element $f$ in user group $g$ at time $t$, and $N_t^g$ represents the total number of fashion items (e.g., apparel, bags, footwear) observed in group $g$ at time $t$. Given a historical time range $[1, T]$, our objective is to predict the future values over a forecasting horizon $[T+1, T+H]$, where $T$ denotes the length of the historical sequence, $H$ denotes the prediction window (forecasting horizon), and $T \gg H$. \zhang{In our implementation, both datasets are organized as preprocessed instances, each consisting of a historical popularity window, a future forecasting horizon, and associated metadata. All experiments are conducted at weekly granularity. For FIT, we use a 48-step historical window and consider two forecasting settings with $H=12$ and $H=24$, corresponding to half-year and one-year prediction, respectively. For GeoStyle, each instance uses a 52-step historical window and a 26-step forecasting horizon.}
+
+\section{Methodology}
+
+\begin{figure*}
+    \centering
+   \includegraphics[width=.95\linewidth]{figures/main.png}
+  \caption{Overall DDFTF framework of our proposed fashion trend prediction model.}
+  \label{fig:model}
+\end{figure*}
+
+\subsection{Overall Framework}
+
+% The overall framework of the proposed model is illustrated in Figure~\ref{fig:model}. It consists of three main components: a numerical forecasting stream, a textual semantic stream, and a fusion module that integrates the two streams. The numerical forecasting stream takes historical time-series data and associated metadata as inputs, producing numerical feature representations for trend prediction. The textual semantic stream constructs corresponding textual descriptions based on historical trends and encodes them using a pre-trained language model to obtain trend-aware semantic representations.  Finally, the Fusion Module adaptively integrates the complementary representations from both streams, synthesizing them to produce the final fine-grained fashion trend predictions.
+As shown in Figure~\ref{fig:model}, our proposed DDFTF comprises a numerical forecasting stream, a textual semantic stream, and a dual-stream fusion module, which jointly model historical trends and generate fine-grained fashion trend predictions.
+
+\subsection{Numerical Forecasting Stream}
+
+The numerical forecasting stream is designed as a lightweight yet expressive module dedicated to capturing fine-grained temporal variations in fashion popularity. Departing from traditional point-wise modeling \cite{miller2024survey}, this stream adopts a patch-based strategy that integrates multi-scale temporal representations with metadata-aware feature fusion.\zhang{Concretely, the numerical stream is instantiated as a patch-based Transformer encoder rather than a recurrent backbone. The historical popularity sequence is segmented into temporal patches, encoded as patch tokens, reweighted by the adaptive importance mask, and then processed by self-attention layers to capture inter-patch temporal dependencies before forecasting the future horizon.}
+
+
+\textbf{Multi-Scale Patch Representation.} To overcome the rigid resolution of fixed-length patches, we segment the historical sequence at multiple temporal scales. This generates non-uniform granularity, allowing the model to simultaneously capture high-resolution fluctuations and low-resolution structural trends.
+
+Let the historical popularity sequence be $\mathbf{x} = [x_1, x_2, \dots, x_T]^\top$. We extract block-wise representations at three scales: Small ($p_1$), Medium ($p_2$), and Large ($p_3$). For the $k$-th scale, the sequence is partitioned into patches of length $l_k$ and stride $s_k$:
+\begin{equation}
+\mathbf{P}^{(k)} = \mathcal{P}(\mathbf{x}, l_k, s_k), \quad \mathbf{P}^{(k)} \in \mathbb{R}^{N^k \times l_k}, \quad k \in {1, 2, 3},
+\end{equation}
+where $N^k$ is the number of patches at scale $k$. Each patch is projected into a shared $d$-dimensional embedding space:
+\begin{equation}
+\mathbf{H}^{(k)} = \mathbf{P}^{(k)} \mathbf{W}_k,
+\end{equation}
+where $\mathbf{W}_k \in \mathbb{R}^{l_k \times d}$ is a scale-specific learnable projection. The resulting embeddings are concatenated along the patch dimension to form a unified sequence $\mathbf{H} = [\mathbf{h}_1, \mathbf{h}_2, \dots, \mathbf{h}_P] \in \mathbb{R}^{P \times d}$, where $P = \sum N^k$.
+
+\textbf{Metadata-Aware Feature Fusion.} To account for the heterogeneity across different demographics and items, we incorporate structured metadata as context. Let $\mathbf{e}^{\text{city}}, \mathbf{e}^{\text{gender}}, \mathbf{e}^{\text{age}}$, and $\mathbf{e}^{\text{elem}}$ denote the $d$-dimensional embeddings for city, gender, age, and fashion element, respectively. 
+\zhang{In practice, these metadata are encoded by separate learnable embedding layers. The city, gender, and age embeddings are concatenated and transformed by an MLP to form a group-level representation, while the fashion element is retained as an independent element embedding.}
+
+
+Demographic attributes are first fused into a group-level representation:
+
+\begin{equation}
+\mathbf{e_\text{group}} = f_\text{group}([\mathbf{e}^{\text{city}}; 
+\mathbf{e}^{\text{gender}}; \mathbf{e}^{\text{age}}]),
+\end{equation}
+
+where $f_{\text{group}}(\cdot)$ is a multi-layer perceptron (MLP). This group prior and the element embedding $\mathbf{e}^{\text{elem}}$ are then broadcast and fused with each temporal patch $\mathbf{h}_p$:
+
+\begin{equation}
+\mathbf{\tilde{h}}_p = f_\text{fuse}([\mathbf{h}_p; \mathbf{e_\text{group}}; \mathbf{e}^{\text{elem}}]),\end{equation}
+where $f_{\text{fuse}}(\cdot)$ maps the concatenated temporal and semantic features into a unified latent space, yielding the metadata-enriched sequence $\mathbf{\tilde{H}} = [\mathbf{\tilde{h}}_1, \dots, \mathbf{\tilde{h}}_p]$.
+\zhang{This design adopts concatenation-based fusion rather than cross-attention: for each temporal patch, the patch token, the group embedding, and the element embedding are concatenated and projected back to the shared latent space, after which the enriched tokens are fed into the adaptive importance masking and Transformer encoding stages.}
+
+
+\textbf{Transformer-based Temporal Modeling.} Recognizing that temporal segments contribute unequally to future trends, we introduce an Adaptive Importance Mask (AIM) to reweight patches based on their predictive relevance. AIM utilizes multi-head self-attention (MHA) to compute contextual importance weights:
+
+\begin{equation}
+\boldsymbol{\alpha} = \sigma\left( \text{MHA}(\mathbf{\tilde{H}}) \mathbf{W}_\alpha \right),
+\end{equation}
+where $\boldsymbol{\alpha} = [\alpha_1, \dots, \alpha_P]$ represents the importance scores. The fused representations are then modulated via element-wise multiplication:
+\begin{equation}
+\mathbf{\hat{H}} = \boldsymbol{\alpha} \odot \mathbf{\tilde{H}},
+\end{equation}
+where $\odot$ denotes the Hadamard product. This mechanism suppresses noise and emphasizes key historical segments that drive trend evolution.
+
+The masked sequence $\mathbf{\hat{H}}$ is processed by a Transformer encoder to model complex dependencies across the global temporal context. By aggregating information via self-attention, the encoder captures intricate cross-segment interaction patterns:
+\begin{equation}
+\mathbf{z}_{1:P} = \mathrm{Transformer}\big(\mathbf{\hat{h}}_{1:P}\big),
+\end{equation}
+resulting in context-enhanced patch representations $\mathbf{z}_i$ that provide a robust foundation for prediction.
+
+\textbf{Prediction Head.} Upon obtaining the patch-level representations, the numerical stream maps these features to future-looking predictions via a prediction head. This component first flattens the encoded representations across the patch dimension and subsequently projects the high-dimensional latent features into the target forecasting horizon.
+
+Specifically, let $\mathbf{Z} = [\mathbf{z}_1, \dots, \mathbf{z}_p] \in \mathbb{R}^{d \times P}$ denote the patch representations produced by the Transformer encoder, where $P$ is the number of patches. These representations are flattened into a global feature vector $\mathbf{u} = \mathrm{vec}(\mathbf{Z}) \in \mathbb{R}^{d \cdot P}$, which captures the collective temporal information. 
+The final forecasting output $\mathbf{\hat{y}}$ is then generated through a linear projection:
+\begin{equation}
+\mathbf{\hat{y}} = \mathbf{W}_o \mathbf{u} + \mathbf{b}_o,
+\end{equation}
+where $\mathbf{W}_o \in \mathbb{R}^{H \times (d \cdot P)}$ and $\mathbf{b}_o \in \mathbb{R}^H$ are learnable weight and bias parameters, respectively. Here, $\mathbf{\hat{y}} \in \mathbb{R}^H$ represents the predicted values over the future horizon $H$. Through this architecture, the numerical stream completes the transition from historical sequence modeling to future trend estimation.
+
+\subsection{Textual Semantic Stream}
+We further introduce a \emph{textual semantic stream} to capture high-level semantic information during trend evolution that is difficult to explicitly model through numerical signals alone. Unlike the numerical stream, which focuses on local fluctuations, temporal dependencies, and structured metadata variations, the textual semantic stream emphasizes trend dynamics at a global level. Its objective is not to perform a standalone prediction, but to provide complementary trend-aware information to support numerical forecasting.
+Specifically, the textual semantic stream constructs descriptive trend narratives from historical time series and maps them into continuous semantic representations using a pre-trained language model. During training, the semantic representations are kept frozen and are not involved in end-to-end numerical feature learning; instead, they are incorporated into the prediction process as external prior knowledge to guide trend forecasting.
+
+\textbf{Textual Historical Trends Generation.} 
+The textual semantic stream abstracts the numerical trends within a historical observation window into high-level, interpretable representations.
+Let the time series be denoted as $\mathbf{x}_{1:T}=\{x_1, x_2,...,x_T\}$, where $T$ signifies the look-back window. 
+To bridge the gap between raw data and semantic understanding—analogous to the classic textile challenge of mapping subjective fabric handle to objective parameters~\cite{ismail2020ai}, we employ a prompt-based generation strategy.
+Specifically, an LLM distills the sequence into key trend dimensions, including \textit{Overall Trend}, \textit{Volatility}, \textit{Major Turning Points}, \textit{Volatile Segments}, and \textit{Recent Regime}, along with a summarizing \textit{Caption}.  
+\zhang{For reproducibility, we provide the prompt template and constrained output schema used for generating these semantic descriptions in the Appendix.}
+
+This structured description avoids numerical values, focusing instead on high-level evolutionary patterns. \zhang{During annotation generation, we additionally applied a basic structural consistency check: each batch output had to be parseable as valid JSON and preserve one-to-one sample correspondence within the input batch; otherwise, it was discarded and regenerated.}
+Finally, $\mathcal{D}$ is mapped into a latent semantic space via a pretrained text encoder, providing a conceptual prior that guides the numerical forecasting stream.
+
+Subsequently, the structured profile $\mathcal{D}$ is mapped into a continuous semantic space: $\mathbf{s} = f_{\text{text}}(\mathcal{D})$, where $\mathbf{s} \in \mathbb{R}^d$ represents a fixed-dimensional latent vector. We employ a pretrained language model as the encoding function $f_{\text{text}}(\cdot)$ to capture the rich contextual dependencies within the trend descriptions. During the training phase, the parameters of $f_{\text{text}}(\cdot)$ remain frozen to preserve the robust prior knowledge of the language model, treating $\mathbf{s}$ as an invariant semantic anchor for the downstream forecasting tasks. By distilling numerical histories into high-level concepts, this dual-stream strategy effectively reifies abstract trend patterns into actionable semantic signals. These vectors serve as a unified bridge, facilitating the collaborative integration of qualitative reasoning and quantitative modeling in the subsequent prediction stages.
+
+\textbf{Trend-aware Semantic Projection.} 
+% To integrate the high-level semantic vector $\mathbf{s}$ with the numerical forecasting stream, it must be projected into a representation space consistent with the time-series features. Given the inherent modality gap between textual semantics and numerical signals, we employ a learnable mapping function to align them within a shared latent space:
+\zhang{To integrate the semantic representation with the numerical forecasting stream, we first map the text embedding into a latent space compatible with numerical features. Let $\mathbf{s}$ denote the semantic vector encoded from the structured description. We use a learnable projection layer to obtain an aligned representation.}
+\begin{equation}
+\mathbf{z}^{sem} = f_{proj}(\mathbf{s}),
+\end{equation}
+where $f_{proj}(\cdot)$ denotes the semantic projection layer, and $\mathbf{z}^{sem}$ represents the aligned semantic embedding.
+
+% Directly incorporating $\mathbf{z}^{sem}$ may overlook the diverse volatility scales across different time-series samples. To ensure that the semantic influence is appropriately calibrated to the historical dynamics of each sequence, we introduce a scale-aware modulation mechanism. Specifically, we compute a sample-specific modulation factor based on the variation characteristics of the historical sequence $\mathbf{x}_{1:T}$, which adaptively rescales the semantic embedding:
+
+% \begin{equation}
+% \tilde{\mathbf{z}}^{sem}= \Phi(\mathbf{x}_{1:T}) \odot \mathbf{z}^{sem},
+% \end{equation}
+
+% where $\Phi(\cdot)$ denotes the scale-aware mapping function, $\odot$ represents the element-wise product, and $\tilde{\mathbf{z}}^{sem}$ is the final modulated semantic representation. This mechanism ensures that the semantic prior is dynamically weighted according to the magnitude and volatility of the numerical input.
+
+% \textbf{Semantic Output Head.} After obtaining the scale-modulated semantic representation $\tilde{\mathbf{z}}^{sem}$, the textual stream generates a semantic adjustment signal tailored for the forecasting window. Rather than producing independent forecasts, this head serves as a \textbf{qualitative complement} to the numerical stream, capturing high-level trend corrections that numerical models might overlook. Specifically, the modulated representation $\tilde{\mathbf{z}}^{sem}$ is mapped into the target forecasting space via a linear output layer:
+
+% \begin{equation}\Delta \mathbf{y} = \mathbf{W_\Delta} \tilde{\mathbf{z}}^{sem} + \mathbf{b_\Delta},\end{equation}
+
+% where $\mathbf{W}_{\Delta} \in \mathbb{R}^{H \times d_{sem}}$ and $\mathbf{b}_{\Delta} \in \mathbb{R}^H$ are learnable parameters. The resulting vector $\Delta \mathbf{y} \in \mathbb{R}^H$ represents the \textbf{semantic adjustment signal}, which encapsulates trend-level refinements across the prediction horizon. Through this mechanism, the textual semantic stream completes its functional pipeline—transitioning from the abstraction of historical patterns to the generation of actionable semantic priors for future trends.
+
+\textbf{Semantic Output Head.} After obtaining the projected semantic representation $\mathbf{z}^{sem}$, the textual stream generates a semantic adjustment signal tailored for the forecasting window.Rather than producing independent forecasts, this head serves as a \textbf{qualitative complement} to the numerical stream, capturing high-level trend corrections that numerical models might overlook. Specifically, the projected representation $\mathbf{z}^{sem}$ is mapped into the target forecasting space via a linear output layer:
+
+\begin{equation}
+\Delta \mathbf{y} = \mathbf{W_\Delta} \mathbf{z}^{sem} + \mathbf{b_\Delta},
+\end{equation}
+
+where $\mathbf{W}_{\Delta} \in \mathbb{R}^{H \times d_{sem}}$ and $\mathbf{b}_{\Delta} \in \mathbb{R}^H$ are learnable parameters. The resulting vector $\Delta \mathbf{y} \in \mathbb{R}^H$ represents the \textbf{semantic adjustment signal}, which encapsulates trend-level refinements across the prediction horizon. Through this mechanism, the textual semantic stream completes its functional pipeline, transitioning from the abstraction of historical patterns to the generation of actionable semantic priors for future trends.
+
+
+\subsection{Dual-Stream Fusion Mechanism} 
+% Once the outputs from both the numerical and textual streams are obtained, the model generates the final prediction through a dual-stream fusion mechanism. While the numerical forecasting stream captures fine-grained temporal patterns from historical data, the textual semantic stream provides a high-level semantic signal that encapsulates global trend dynamics. These two streams operate in a synergistic manner, addressing the quantitative and qualitative aspects of fashion trends, respectively. In the fusion stage, we investigate two integration strategies: weighted interpolation and residual refinement. The weighted strategy linearly combines predictions from both streams via a learnable weight, while the residual strategy treats the semantic signal as an additive correction to the numerical base. We adopt the residual approach for its focus on adjusting trend shifts. 
+\zhang{Once the outputs from both the numerical and textual streams are obtained, the model generates the final prediction through a dual-stream fusion mechanism. While the numerical forecasting stream captures fine-grained temporal patterns from historical data, the textual semantic stream provides a high-level semantic signal that encapsulates global trend dynamics. These two streams operate in a synergistic manner, addressing the quantitative and qualitative aspects of fashion trends, respectively. In the fusion stage, we consider two integration strategies: weighted interpolation and residual refinement. The weighted strategy linearly combines predictions from both streams via a learnable weight, while the residual strategy treats the semantic signal as an additive correction to the numerical base. We adopt residual fusion as the default formulation because the numerical stream already provides a strong forecasting backbone, whereas the textual semantic stream mainly contributes complementary cues about global trend shifts and turning points. Under this design, the semantic branch refines rather than overrides the numerical trajectory, making residual fusion more suitable for the current task and more stable than direct interpolation.}
+
+The final prediction $\mathbf{y}_f \in \mathbb{R}^H$ is formulated as:
+\begin{equation}
+\mathbf{y}_f = \hat{\mathbf{y}} + \Delta \mathbf{y}.
+\end{equation}
+
+By unifying the numerical and textual streams, the model achieves a holistic representation of fashion evolution, leveraging the precision of time-series modeling alongside the reasoning capabilities of semantic knowledge.
+% \cui{In the fusion stage, we employ an additive integration strategy to incorporate the semantic modulation signal into the numerical base prediction. This process can be interpreted as a residual refinement}, where the semantic stream adjusts the numerical trajectory to better reflect potential trend shifts. The final prediction $\mathbf{y}_f \in \mathbb{R}^H$ is formulated as:\begin{equation}\mathbf{y}_f = \hat{\mathbf{y}} + \Delta \mathbf{y}.\end{equation}By unifying the numerical and textual streams, the model achieves a holistic representation of fashion evolution, leveraging the precision of time-series modeling alongside the reasoning capabilities of semantic knowledge.
+
+\section{Experiments}
+This section presents the experimental results of the proposed DDFTF framework on the fashion trend forecasting task. Experiments are conducted on the FIT~\cite{ma2020knowledge} and GeoStyle~\cite{mall2019geostyle} datasets, where we report overall performance comparisons, ablation studies on key components, performance under different forecasting settings, and qualitative visualizations of trend prediction cases.
+
+\subsection{Experimental Setting} 
+
+% \cui{Following the experimental setting of previous work~\cite{ma2020knowledge}, experiments are conducted on the FIT and GeoStyle datasets. 
+% Both datasets represent the popularity dynamics of fashion elements across different user groups in the form of time series, but they differ in terms of user attribute dimensions and trend complexity. In the GeoStyle dataset, trends are aggregated solely at the city level, with limited user attribute information, resulting in time series that exhibit strong periodic patterns. In contrast, the FIT dataset incorporates multiple user attributes, including city, gender, and age, and covers a broader range of fashion element categories, enabling the modeling of more complex trend dynamics across diverse user groups. All experiments are performed directly on the original time series provided by the datasets, without introducing additional smoothing or resampling operations. 
+% In the experimental evaluation, \textbf{MAE} and \textbf{MAPE} are employed as the primary metrics to assess forecasting performance.  Table~\ref{tab:dataset} reports the statistical comparison of the datasets used in experiments with the proposed method.}
+
+Following the experimental setting of previous work~\cite{ma2020knowledge}, we conduct experiments on two public datasets, both datasets describe the popularity dynamics of fashion elements across different user groups as time series, but they differ substantially in the richness of user attributes and the complexity of trend patterns. 
+GeoStyle aggregates trends mainly at the city level, with relatively limited user group information, and its popularity series often exhibits pronounced periodicity.
+In contrast, FIT includes information for multiple user groups (i.e., city, gender, and age) and covers a wider variety of categories of fashion elements, leading to more diverse and complex trend dynamics between user groups. \zhang{For reproducibility, we use the preprocessed all-in-one files in our implementation and partition them into train, validation, and test subsets with a ratio of 70\%/10\%/20\% using contiguous index ranges. We do not reshuffle the instances after preprocessing. For FIT, numerical values are normalized with a training-only scaler, which is fitted on the training split and then reused for validation and test data to avoid information leakage.}
+For evaluation, we adopt \textbf{MAE} and \textbf{MAPE} as the primary metrics to measure forecasting performance. Table~\ref{tab:dataset} reports the statistical comparison of the datasets used in experiments with the proposed method.
+
+\begin{table}[t]
+\centering
+\caption{Statistical Comparison Between FIT and GeoStyle Datasets. \textbf{\#FE} denotes the number of fashion elements, and \textbf{\#Seq} denotes the number of sequences.}
+
+\label{tab:dataset}
+\resizebox{\linewidth}{!}{
+\begin{tabular}{ccccccc}
+\toprule
+Dataset & City & Gender & Age & \#FE & Time  & \#Seq \\
+
+\midrule
+GeoStyle & 44 & N/A & N/A & 46 & 3 years  & 2{,}024 \\
+FIT      & 14 & 2   & 4   & 173 & 5 years & 8{,}808 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\begin{table*}[t]
+\centering
+\caption{Overall forecasting performance of different methods on the GeoStyle and FIT datasets. ``*'' indicates values extracted from the performance plots reported in the original TS-BiLSTM paper, since exact numerical results were not provided in tabular form.}
+
+\label{tab:overall_performance}
+\begin{tabular}{c|cc|cc|cc}
+\hline
+\multirow{2}{*}{Method} 
+& \multicolumn{2}{c|}{GeoStyle (Half-year)} 
+& \multicolumn{2}{c|}{FIT (Half-year)} 
+& \multicolumn{2}{c}{FIT (One-year)} \\
+& \textbf{MAE(\%)}& \textbf{MAPE(\%)} & \textbf{MAE(\%)} & \textbf{MAPE(\%)} & \textbf{MAE(\%)} & \textbf{MAPE(\%)} \\
+\hline
+Mean        & 0.029 & 25.79 & 0.132  & 65.31 & 0.135  & 63.21 \\
+Last        & 0.023 & 21.04 & 0.125  & 46.45 & 0.147  & 54.04 \\
+AR          & 0.021 & 20.69 & 0.114  & 54.36 & 0.119  & 51.96 \\
+VAR         & 0.015 & 17.95 & 0.157  & 62.97 & 0.126  & 47.35 \\
+% ES          & 0.023 & 20.59 & 0.133  & 55.29 & 0.150  & 57.42 \\
+Linear      & 0.037 & 24.40 & 0.112  & 43.30 & 0.133  & 45.89 \\
+Cyclic      & 0.017 & 16.64 & 0.129  & 49.92 & 0.143  & 51.66 \\
+GeoStyle    & 0.015 & 16.03 & 0.136  & 52.40 & 0.149  & 53.14 \\
+KERN        & 0.013 & 14.24 & 0.083  & 30.02 & 0.094  & 33.45 \\
+REAR        & 0.013 & 14.36 & 0.086  & 29.45 & 0.095  & 32.26 \\
+DKERNQL	    &\underline{0.012}& 14.78 & 0.082 &29.87 &0.095	&32.92 \\
+MAFT        & 0.013 & \underline{13.97} & - & - & \underline{0.082} & \underline{29.23}  \\
+% FusFormer   &0.012	&13.08	&0.076	&26.49	&0.086	&29.51 \\
+TS-BiLSTM   & 0.013	& 14.68	&\underline{0.079}*	&\underline{28.66}*	&{0.084}* &{29.40}* \\
+\hline
+\textbf{DDFTF} 
+            & \textbf{0.011} & \textbf{13.04} 
+            & \textbf{0.071} & \textbf{25.23} 
+            & \textbf{0.070} & \textbf{25.38} \\
+Improvement (\%) 
+            & 8.33 & 6.65 & 10.13 & 13.59 & 14.63 & 15.17 \\
+\hline
+\end{tabular}
+\end{table*}
+
+
+\subsection{Baselines}
+To comprehensively evaluate the performance of the proposed method on the fashion trend forecasting task, the experiments consider a diverse set of representative baseline approaches:
+
+\begin{itemize}
+\item  \textbf{Mean} and \textbf{Last}: Statistical forecasting methods include simple history-based baselines;
+\item  \textbf{AR} and \textbf{VAR}: time-series models based on linear autoregressive principles, which are used to capture local temporal dependencies;
+
+% \item \textbf{ES}~\cite{al2017fashion}: exponential smoothing, which is a parametric trend model.
+
+\item \textbf{Linear} and \textbf{Cyclic}~\cite{mall2019geostyle}: linear and cyclic models, which fit historical sequences by explicitly modeling trend and periodic components.
+
+\item \textbf{GeoStyle} \cite{mall2019geostyle}: combines linear trends with cyclic components and is a commonly used parametric forecasting model on the GeoStyle dataset.
+
+\item \textbf{KERN}~\cite{ma2020knowledge}: knowledge-enhanced recurrent network model, which takes advantage of the capability of deep recurrent neural networks in modeling time-series data.
+
+\item \textbf{REAR}~\cite{ding2021leveraging}: proposes the Relation-Enhanced Attention Recurrent network, which extends KERN by modeling not only relations among fashion elements but also relations among user groups, thereby capturing richer cross-trend correlations.
+
+\item \textbf{DKERNQL}~\cite{rooholamini2023dynamic}: an extension of KERN that integrates dynamic knowledge representations to improve fashion trend forecasting, optimized using quantile loss.
+
+\item \textbf{MAFT}~\cite{chen2023fashion} employs a Multivariable Fusion Attention mechanism to capture interactions among heterogeneous variables and effectively integrate multivariate features.
+
+\item \textbf{TS-BiLSTM}~\cite{huang2024application}: addresses fashion trend prediction by combining attribute-level element extraction, user-aware trend aggregation, and a BiLSTM-based temporal forecasting model enhanced with element co-occurrence relationships.
+
+\end{itemize} 
+
+To ensure a fair comparison, the proposed approach is evaluated under the same data settings as the KERN model.
+
+\subsection{Implementation Details}
+
+All models are implemented in a unified framework using PyTorch. For FIT experiments, we use a batch size of 200 and an initial learning rate of $1 \times 10^{-3}$. For FIT fusion, we further adopt split optimization with $\mathrm{lr}_{num}=1 \times 10^{-4}$ and $\mathrm{lr}_{text}=5 \times 10^{-4}$, together with early stopping based on validation performance. \zhang{For the numerical stream, the hidden dimension is set to 64, the feed-forward dimension to 256, the number of attention heads to 4, and the encoder depth to 2. For the FIT fusion module, we set the text hidden dimension to 128, $\mathrm{num\_feat\_dim}$ to 64, $\mathrm{fusion\_hidden}$ to 128, and $\mathrm{fusion\_dropout}$ to 0.1. The prompt template and constrained output schema are provided in the Appendix.} All experiments are conducted on an Nvidia GeForce RTX 4090 GPU with 24GB memory.
+
+% The proposed method utilizes an end-to-end joint training strategy. The numerical forecasting stream produces base predictions, while the textual stream functions as an auxiliary branch to refine these results through trend-level adjustments. Both components are integrated via the fusion module, and their parameters are optimized simultaneously. This joint optimization ensures that the high-level semantic knowledge from the textual stream effectively complements the fine-grained numerical features.
+
+% \cui{All models are implemented under a unified training and evaluation pipeline. Model parameters are learned exclusively on the training set, while the validation set is used for hyperparameter tuning and early stopping. We adopt the AdamW optimizer, and the initial learning rate, batch size, and maximum number of training epochs are determined based on validation performance.}
+% % 给出一些具体的 数值，adamw多少.
+
+% \cui{The proposed method is trained in an end-to-end joint manner. The numerical forecasting stream produces the base prediction results, while the textual correction module serves as an auxiliary branch to refine these predictions by providing trend-level adjustments. The two components are jointly optimized through the fusion module, and the parameters of both branches are updated simultaneously during training. Notably, the textual correction module is not designed to independently perform end-to-end numerical forecasting; instead, its contribution lies in complementing and adjusting predictions at the trend level. A detailed comparison of different training strategies will be further analyzed in subsequent experiments.}
+
+\subsection{Overall Performance}
+
+Table~\ref{tab:overall_performance} presents the overall forecasting results of the proposed method and the compared baselines. MAE and MAPE are used as main evaluation metrics, with lower values indicating better predictive accuracy. Several observations can be drawn from the results:
+
+(1) Our method demonstrates consistent state-of-the-art performance across all datasets and settings. On GeoStyle (half-year), it attains 0.011 MAE and 13.04 MAPE, representing an 8.33\% and 6.65\% relative improvement over second best results. Similar advancements are observed on the FIT dataset, with the most significant gains occurring in the one-year forecasting task, where MAE and MAPE are reduced by 14.63\% and 15.17\%, respectively. These results underscore the robustness of our approach in long-term forecasting.
+
+
+% (2) Compared with statistical models and parametric trend-based methods, learning-based approaches demonstrate more pronounced advantages on the FIT dataset. As shown in Table~\ref{tab:overall_performance}, most traditional methods yield relatively high MAE and MAPE on FIT, whereas the KERN-based methods (including KERN, REAR, and their QL variants) and our approach consistently achieve lower errors under both the Half-year and One-year forecasting settings. 
+% Notably, even after incorporating these advanced KERN-based baselines, our method still attains the best overall performance, indicating that it maintains a stable advantage over strong learning-based competitors. 
+
+(2) On the FIT dataset, knowledge-based methods significantly outperform traditional statistical and parametric models. While most traditional baselines yield high prediction errors, the KERN-based methods (including KERN, REAR, and their DKERNQL variants), along with MAFT and TS-BiLSTM, show marked improvements. Specifically, MAFT and TS-BiLSTM achieve the runner-up performance for half-year and one-year forecasting, respectively, by leveraging complex attention mechanisms and attribute-level dependencies. Nevertheless, our method surpasses these strong competitors, achieving the lowest MAE and MAPE across all settings. This highlights that our approach not only outperforms basic knowledge-based models but also sets a new performance ceiling above existing advanced fusion and recurrent architectures.
+
+(3) Our model consistently improves performance across all benchmarks, though the gains on GeoStyle are less pronounced due to its sparser distribution, fewer meta-features, and smaller training set. Nevertheless, achieving 8.33\% and 6.65\% improvements on such a challenging dataset underscores the effectiveness of our approach in handling data-scarce environments.
+
+Subsequent experiments further analyze the impact of key components and training strategies on overall performance, and present qualitative trend prediction cases to illustrate the model’s behavior at the level of fine-grained fashion elements.
+
+\subsection{Ablation Analysis}
+
+We perform ablation studies on the FIT and GeoStyle datasets to validate core components on our model and training strategies. Maintaining consistency with previous experimental settings, we isolate the effects of input features and fusion methods. This allows us to verify the effectiveness of our textual debiasing and fusion design. Tables~\ref{tab:fit_halfyear_ablation}--\ref{tab:geostyle_halfyear_ablation} present the detailed results.
+
+\begin{table}[t]
+\centering
+\caption{Ablation results on FIT under the Half-year setting. ``Num.'': Numerical stream; ``Fuse'': both numerical and textual semantic streams; ``w/o Meta'': without metadata-aware feature; ``w/ Meta'': with metadata-aware feature;``Res.'':residual fusion; ``Weight.'': weighted fusion;  ``Imp. '': improvement.}
+\label{tab:fit_halfyear_ablation}
+\begin{tabular}{l l c c}
+\hline
+\textbf{Group} & \textbf{Variant} & \textbf{MAE(\%)} & \textbf{MAPE(\%)} \\
+\hline
+Num. & Num. (w/o Meta) & 0.1165 & 43.60 \\
+Num. & Num. (w/ Meta)  & 0.0841 & 30.26 \\
+Fuse & Ours (Res., Full) & \textbf{0.0713} & \textbf{25.23 }\\
+Fuse & Direct (Weight., Full) & \underline{0.0715} & \underline{25.42 }\\
+\hline
+Imp. (\%) & Ours vs. Num & 38.77 & 42.13  \\
+\hline
+\end{tabular}
+\end{table}
+
+% Table~\ref{tab:fit_halfyear_ablation} presents the ablation results on the FIT dataset under the Half-year forecasting setting. Compared with the pure numerical model without meta features, incorporating meta features significantly reduces prediction errors. Building upon this, further introducing textual debiasing and performing fusion leads to additional performance gains. The Residual Fusion variant achieves the best results under this setting, outperforming Direct Fusion by 0.28\% in MAE and 0.75\% in MAPE, indicating that the residual-space debiasing approach is more effective for stably integrating the benefits of textual information.
+Table~\ref{tab:fit_halfyear_ablation} presents the ablation results on the FIT dataset under the half-year prediction setting. Compared to the purely numerical model, the integration of meta-information significantly reduces prediction error, performing in a manner similar to KERN-based numerical-stream methods. Building upon this baseline, the incorporation of our textual debiasing mechanism and advanced fusion strategies yields further performance gains. Notably, both proposed fusion variants achieve the best and second-best results. This underscores that our dual-stream approach not only substantially enhances predictive accuracy but also exhibits strong robustness across different fusion architectural designs.
+
+\begin{table}[t]
+\centering
+\caption{Ablation study results on the FIT dataset under the One-year forecasting setting.}
+\label{tab:fit_oneyear_ablation}
+\begin{tabular}{l l c c}
+\hline
+\textbf{Group} & \textbf{Variant} & \textbf{MAE(\%)} & \textbf{MAPE(\%)} \\
+\hline
+Num. & Num. (w/o Meta) & 0.1102 & 41.97 \\
+Num. & Num. (w/ Meta) & 0.0844 & 31.22 \\
+Fuse & Ours (Res., Full) & \textbf{0.0704} & \textbf{25.38}\\
+Fuse & Direct (Weight., Full) & \underline{0.0706} & \underline{26.05} \\
+\hline
+Imp. (\%) & Ours vs. Num  & 36.10	& 39.53 \\
+\hline
+\end{tabular}
+\end{table}
+
+
+Table~\ref{tab:fit_oneyear_ablation} presents the ablation results on the FIT dataset under the one-year forecasting setting. As the forecasting horizon extends, the prediction errors of purely numerical models escalate significantly; in contrast, the fusion-based models maintain consistently low error rates. Notably, Fusion in a residual manner continues to outperform weighted fusion, with the primary improvement observed in MAPE (a 2.57\% reduction). This suggests that the residual-based approach is particularly effective at mitigating relative errors and maintaining stability in long-term predictions.
+
+\begin{table}[t]
+\centering
+\caption{Ablation study results on the GeoStyle dataset under the Half-year forecasting setting.}
+\label{tab:geostyle_halfyear_ablation}
+\begin{tabular}{l l c c}
+\hline
+\textbf{Group} & \textbf{Variant} & \textbf{MAE(\%)} & \textbf{MAPE(\%)} \\
+\hline
+Num. & Num. (w/o Meta)   & 0.0143 & 16.53 \\
+Num. & Num. (w/ Meta)    & 0.0120 & 15.30 \\
+Fuse & Ours (Res., Full) & \textbf{0.0108}& \textbf{13.04} \\
+Fuse & Direct (Weight., Full) &\underline{0.0109} &\underline{13.41} \\
+Imp. (\%) & Ours vs. Num &22.93  &21.11 \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}
+    \centering
+   \includegraphics[width=\linewidth]{figures/comparions of different setting_.png}
+  \caption{Comparison of trend forecasts for representative fashion elements across user groups, highlighting the impact of textual semantic fusion.
+}
+  \label{fig:different_setting}
+\end{figure}
+
+For the GeoStyle dataset, Table~\ref{tab:geostyle_halfyear_ablation} presents the ablation results under the Half-year forecasting setting. Due to the absence of a "w/o meta" baseline, the comparison focuses on the numerical-only model (with meta) and the two fusion strategies. The results indicate that incorporating textual debiasing further reduces prediction errors. 
+
+% In summary, these results demonstrate that both meta-aware features and textual debiasing contribute significantly to predictive accuracy. Across both datasets, the two fusion strategies ensure stable performance gains, with Residual Fusion consistently exhibiting superior robustness, particularly in long-term forecasting scenarios.
+\zhang{In summary, these results demonstrate that both meta-aware features and textual debiasing contribute significantly to predictive accuracy. Across both datasets, the two fusion strategies ensure stable performance gains, while Residual Fusion consistently performs better than weighted interpolation. This empirical trend supports our use of residual fusion as the default formulation, since it allows the semantic stream to refine rather than override the numerical backbone, particularly in long-term forecasting scenarios.}
+
+\begin{figure}
+    \centering
+   \includegraphics[width=\linewidth]{figures/figure5.png}
+  \caption{Visualization of group-specific fashion trend reports generated from batch predictions across multiple fashion element types. The report summarizes key rising elements, stage-wise peaks, and emerging style combinations over the forecast horizon, providing decision support for assortment planning, design, and marketing.}
+
+  \label{fig:report}
+\end{figure}
+
+\subsection{Fashion Trend Analysis}
+\begin{figure*}
+    \centering
+   \includegraphics[width=.8\linewidth]{figures/case.png}
+  \caption{Examples of popularity trend forecasting for different user groups and fashion elements. The blue curves denote the ground-truth values, while the purple curves represent the predicted results.}
+  \label{fig:case}
+\end{figure*}
+
+% This section analyzes the performance of our proposed model at the level of fine-grained clothing elements through trend forecasting visualizations, and further examines its ability to capture trend differences across diverse user groups.
+% This section evaluates the qualitative effectiveness of our proposed framework by analyzing specific trend forecasting cases across diverse fashion elements and user demographics.
+
+Figure~\ref{fig:different_setting} compares the trend forecasting performance of two representative fashion elements across different user groups and highlights the gains introduced by textual semantic fusion. The blue curves denote the ground-truth trends, the purple curves correspond to predictions from the text--numerical fusion model, and the red curves represent predictions from the pure numerical model. The two columns correspond to the user groups (Paris, Female, 25--40), and (London, Female, 25--40), respectively.
+
+It can be observed that the pure numerical model produces relatively smoother predictions and tends to underreact to pronounced fluctuations and turning points in the ground-truth trends. For example, it fails to adequately capture the stage-wise rise followed by a decline of the ``black'' element in Paris, the abrupt peak toward the end of the sequence in London. In contrast, the fusion model achieves better alignment with key peaks, valleys, and overall trend directions in most subplots, exhibiting slopes and local fluctuation amplitudes that are closer to the ground truth. These observations indicate that incorporating textual semantic information enhances the model’s ability to capture fine-grained, group-specific trend variations of fashion elements.
+
+Based on batch forecasting results for multiple types of fashion elements (including categories, colors, patterns, styles, and fine-grained attributes), trend reports tailored to specific user groups can be further generated. These reports summarize key rising elements, stage-wise peaks, and emerging style combinations over a future time horizon, providing practical support for assortment planning, design decisions, and marketing strategies. As illustrated in Figure~\ref{fig:report}, we present a representative visualization report for reference.
+
+\subsection{Case Study}
+
+Figure~\ref{fig:case} shows representative fashion element trend forecasts on the FIT dataset for two user groups, each with two selected fashion elements. The blue curves represent the ground-truth trends, while the purple curves indicate the model predictions. For each subplot, the top and bottom rows correspond to the Half-year and One-year forecasting settings, respectively. Below each subplot, the corresponding textual description is provided, which serves as part of the model's textual input stream to provide semantic guidance for trend prediction.  
+
+Overall, the model closely tracks the general trajectory of the ground-truth trends under both forecasting horizons, accurately capturing the positions of peaks and turning points in most cases. Although prediction errors increase in the One-year setting, the discrepancies mainly appear as amplitude shifts, while the overall trend directions remain largely consistent with the ground truth. Moreover, different user groups exhibit distinct fluctuation patterns and temporal rhythms even along similar attribute dimensions. By integrating user attributes with textual semantic information, the model generates predictions that align with the characteristics of each user group, demonstrating its ability to capture conditional trend variations across user populations.
+
+\section{Conclusion}
+
+% In this paper, we propose a dual-stream fashion trend forecasting framework that jointly integrates numerical temporal modeling and textual semantic understanding to address the limitations of conventional time-series methods in capturing complex trend evolution. The numerical forecasting stream enables fine-grained modeling of popularity dynamics across different user groups by leveraging multi-scale patch-based representations and metadata-aware feature fusion, while the textual semantic stream provides complementary high-level trend semantics derived from historical sequences through pre-trained language models. Unlike conventional methods that rely solely on historical statistics, our approach acknowledges that fashion trends are driven by complex consumer narratives, thereby bridging the gap between quantitative data and qualitative market insights. By effectively fusing numerical and semantic representations, the proposed framework improves both the accuracy and timeliness of trend prediction, particularly in identifying critical turning points.
+
+% Extensive experiments on real-world, cross-group fashion datasets demonstrate the effectiveness of our approach over strong baselines in terms of overall forecasting accuracy and turning-point prediction performance. From a managerial perspective, the implications of this work extend beyond algorithmic performance. First, the enhanced ability to anticipate trend inflection points provides a crucial decision-support tool for supply chain managers, enabling a shift from reactive inventory buffering to proactive demand response. This directly addresses the industry's chronic challenge of balancing stock availability with the risk of overproduction.
+
+% Second, by reifying abstract numerical trends into interpretable semantic descriptions, our model offers designers and merchandisers actionable insights into \textit{why} a trend is evolving. Ultimately, by facilitating more precise and interpretable forecasting, our framework serves as a technological enabler for sustainable, on-demand manufacturing models, helping to mitigate pre-consumer textile waste~\cite{abrishami2024textile} and foster a more resilient fashion ecosystem.
+
+In this paper, we propose a dual-stream framework for fashion trend forecasting that integrates numerical temporal modeling with textual semantic understanding. The numerical stream captures fine-grained popularity dynamics across user groups through multi-scale patch representations and metadata-aware fusion, while the textual stream extracts high-level trend semantics from historical sequences using pre-trained language models. By jointly modeling quantitative signals and qualitative narratives, our approach bridges the gap between statistical patterns and consumer-driven trend evolution, leading to more accurate and timely predictions, especially for critical turning points.
+
+Extensive experiments on two datasets demonstrate that our method consistently outperforms strong baselines in both overall forecasting accuracy and turning-point detection. Beyond technical performance, this work offers practical implications for fashion management. Improved anticipation of trend inflection points enables supply chain managers to move from reactive inventory strategies to proactive demand planning, alleviating the trade-off between stock availability and overproduction. Moreover, transforming numerical trends into interpretable semantic descriptions provides designers and merchandisers with insights into why trends evolve. Ultimately, our framework supports more precise and interpretable forecasting, facilitating sustainable and on-demand manufacturing~\cite{abrishami2024textile}.
+
+\newpage
+\subsection{Copyright}
+Copyright \copyright\ \volumeyear\ SAGE Publications Ltd,
+1 Oliver's Yard, 55 City Road, London, EC1Y~1SP, UK. All
+rights reserved.
+
+\begin{acks}
+
+\end{acks}
+
+\bibliographystyle{cas-model2-names}
+\bibliography{cas-refs}
+
+\appendix
+\section{Prompt Template for Semantic Description Generation}
+
+\paragraph{Background.}
+The textual stream converts each historical popularity sequence into a structured semantic description using an LLM. The prompt conditions only on the observed historical sequence and the associated metadata, without access to the future horizon. The generated output is constrained to a structured schema containing overall trend, volatility, major turning points, volatile segments, recent regime, and a summary caption.
+
+\paragraph{System prompt.}
+\begin{quote}
+\small
+You are a fashion trend analyst. Your task is to summarize a historical popularity time series for a fashion element within a specific user group. Use only the observed historical sequence and metadata. Do not predict future values. Do not use external knowledge. Return a faithful structured description of the historical trend.
+\end{quote}
+
+\paragraph{User prompt.}
+\begin{quote}
+\small
+You are given a historical fashion popularity sequence and associated metadata.
+
+Metadata:
+\begin{itemize}
+    \item fashion\_element: \{element\}
+    \item city: \{city\}
+    \item gender: \{gender\}
+    \item age\_group: \{age\}
+    \item historical\_window\_length: \{T\}
+    \item time\_granularity: weekly
+\end{itemize}
+
+Historical sequence:
+\[
+\{x_1, x_2, \dots, x_T\}
+\]
+
+Please analyze only the historical window above and return a JSON object with the following fields:
+\texttt{overall\_trend}, \texttt{volatility}, \texttt{major\_turning\_points}, \texttt{volatile\_segments}, \texttt{recent\_regime}, and \texttt{caption}.
+
+Requirements:
+\begin{itemize}
+    \item Use only the provided historical sequence and metadata.
+    \item Do not forecast the future horizon.
+    \item Describe the sequence qualitatively rather than copying many raw values.
+    \item Summarize the dominant long-range trend in \texttt{overall\_trend}.
+    \item Summarize fluctuation intensity in \texttt{volatility}.
+    \item Include at most 3 salient historical turning points in \texttt{major\_turning\_points}.
+    \item Include at most 3 volatile intervals in \texttt{volatile\_segments}.
+    \item Summarize the final portion of the history in \texttt{recent\_regime}.
+    \item Write \texttt{caption} as a concise natural-language summary in 2--4 sentences.
+    \item If some metadata are unavailable, use ``unknown'' rather than inventing information.
+    \item Return valid JSON only.
+\end{itemize}
+\end{quote}
+
+\paragraph{Expected output schema.}
+\begin{verbatim}
+{
+  "overall_trend": "...",
+  "volatility": "...",
+  "major_turning_points": [
+    {
+      "t": ...,
+      "type": "...",
+      "prominence": "...",
+      "description": "..."
+    }
+  ],
+  "volatile_segments": [
+    {
+      "start_t": ...,
+      "end_t": ...,
+      "note": "..."
+    }
+  ],
+  "recent_regime": "...",
+  "caption": "..."
+}
+\end{verbatim}
+
+
+\end{document}

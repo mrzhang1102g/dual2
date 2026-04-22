@@ -1,36 +1,17 @@
-"""
-DualSG GeoStyle Numerical Loader
-==============================================
+"""Geo 数值流数据集。"""
 
-用于 GeoStyle 数据集的 数值流训练（DualSG）。
-
-GeoStyle 样本格式:
-{
-    "series": [...52],
-    "target": [...26],
-    "annotations": "...",
-    "metadata": {
-        "element": "clothing_pattern__Graphics",
-        "group": "06",                 # City / Group
-        "norm": [...],                 # [min_v, max_v, eps]
-    }
-}
-
-返回：
-(seq_x, seq_y, seq_x_mark, seq_y_mark, element_id, group_id, norm)
-"""
-
-import os
 import json
+import os
+
 import numpy as np
 from torch.utils.data import Dataset
+
+from utils.data_provider_utils import build_metadata_maps, generate_time_features, is_all_mode, split_data
 from utils.logger import log
 
 
 class Dataset_DualSG_Geo_Num_Meta(Dataset):
-    """
-    GeoStyle Numerical Dataset
-    """
+    """GeoStyle 数值流数据集。"""
 
     def __init__(
         self,
@@ -49,6 +30,7 @@ class Dataset_DualSG_Geo_Num_Meta(Dataset):
         val_ratio=0.1,
         test_ratio=0.2,
     ):
+        del scale, timeenc, freq, seasonal_patterns, test_ratio
         assert flag in ["train", "val", "test"]
 
         self.flag = flag
@@ -57,65 +39,34 @@ class Dataset_DualSG_Geo_Num_Meta(Dataset):
         self.features = features
         self.target = target
         self.use_element = use_element
-        self.scale = scale
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
-        self.test_ratio = test_ratio
 
-        # GeoStyle 序列长度
         if size is None:
-            # 使用配置的默认值
             self.seq_len = 52
             self.label_len = 0
             self.pred_len = 26
         else:
             self.seq_len, self.label_len, self.pred_len = size
 
-        # ===== 元数据映射表 =====
         self.element_map = {}
         self.group_map = {}
+        self._read_data()
 
-        self.__read_data__()
-
-    # ==================================================
-    # 读取并处理数据
-    # ==================================================
-    def __read_data__(self):
-
-        # ---------- 读取 json ----------
+    def _read_data(self):
         full_path = os.path.join(self.root_path, self.data_path)
-        with open(full_path, "r") as f:
-            full_data = json.load(f)
+        with open(full_path, "r", encoding="utf-8") as file:
+            full_data = json.load(file)
 
-        # ---------- 数据切分（all.json 模式） ----------
-        data_list = full_data
-        if "all" in self.data_path or not any(
-            k in self.data_path for k in ["train", "val", "test"]
-        ):
+        if is_all_mode(self.data_path):
             total = len(full_data)
-            train_size = int(total * self.train_ratio)
-            val_size = int(total * self.val_ratio)
+            start, end, _, _ = split_data(total, self.flag, self.train_ratio, self.val_ratio)
+            data_list = full_data[start:end]
+        else:
+            data_list = full_data
 
-            if self.flag == "train":
-                data_list = full_data[:train_size]
-            elif self.flag == "val":
-                data_list = full_data[train_size:train_size + val_size]
-            else:
-                data_list = full_data[train_size + val_size:]
+        self.element_map, self.group_map = build_metadata_maps(full_data)
 
-        # ---------- 构建 element / group 全局映射 ----------
-        for item in full_data:
-            meta = item.get("metadata", {})
-
-            element = meta.get("element", "unknown")
-            group = meta.get("group", "unknown")
-
-            if element not in self.element_map:
-                self.element_map[element] = len(self.element_map)
-            if group not in self.group_map:
-                self.group_map[group] = len(self.group_map)
-
-        # ---------- 提取样本 ----------
         self.series = []
         self.targets = []
         self.element_ids = []
@@ -124,64 +75,42 @@ class Dataset_DualSG_Geo_Num_Meta(Dataset):
 
         for item in data_list:
             meta = item.get("metadata", {})
-
-            # 数值序列
             self.series.append(item["series"])
             self.targets.append(item["target"])
 
-            # element / group → id
             element = meta.get("element", "unknown")
             group = meta.get("group", "unknown")
+            norm = meta.get("norm", [0.0, 1.0, 0.0])
 
             self.element_ids.append(self.element_map.get(element, 0))
             self.group_ids.append(self.group_map.get(group, 0))
-
-            # per-series 归一化参数（用于 test 阶段反归一化）
-            norm = meta.get("norm", [0.0, 1.0, 0.0])
             self.norms.append(norm)
 
-        # ---------- numpy ----------
-        self.series = np.array(self.series, dtype=np.float32)
-        self.targets = np.array(self.targets, dtype=np.float32)
-        self.element_ids = np.array(self.element_ids, dtype=np.int64)
-        self.group_ids = np.array(self.group_ids, dtype=np.int64)
-        self.norms = np.array(self.norms, dtype=np.float32)
-
-        # ---------- 时间特征（占位，与 FIT 保持一致） ----------
-        self.data_stamp_x = np.arange(self.seq_len).reshape(-1, 1) / self.seq_len
-        self.data_stamp_y = np.arange(
-            self.label_len + self.pred_len
-        ).reshape(-1, 1) / self.pred_len
+        self.series = np.asarray(self.series, dtype=np.float32)
+        self.targets = np.asarray(self.targets, dtype=np.float32)
+        self.element_ids = np.asarray(self.element_ids, dtype=np.int64)
+        self.group_ids = np.asarray(self.group_ids, dtype=np.int64)
+        self.norms = np.asarray(self.norms, dtype=np.float32)
+        self.data_stamp_x, self.data_stamp_y = generate_time_features(self.seq_len, self.label_len, self.pred_len)
 
         mode = "ElemOnly" if self.use_element else "NoMeta"
         log(f"[GeoStyle-{mode}][{self.flag}] loaded {len(self.series)} samples")
         log(f"  Elements: {len(self.element_map)} | Groups: {len(self.group_map)}")
 
-    # ==================================================
-    # Dataset API
-    # ==================================================
     def __getitem__(self, index):
-        """
-        返回接口保持稳定：
-        - element / group 是否使用由模型侧决定
-        """
-
-        seq_x = self.series[index].reshape(-1, 1)
-        seq_y = self.targets[index].reshape(-1, 1)
-
         return (
-            seq_x,
-            seq_y,
+            self.series[index].reshape(-1, 1),
+            self.targets[index].reshape(-1, 1),
             self.data_stamp_x,
             self.data_stamp_y,
             self.element_ids[index],
-            self.group_ids[index],   # ← City / Group ID
-            self.norms[index],       # ← [min, max, eps]
+            self.group_ids[index],
+            self.norms[index],
         )
 
     def __len__(self):
         return len(self.series)
 
-    # GeoStyle 下不再支持 inverse_transform（保持接口但不使用）
     def inverse_transform(self, data):
+        # GeoStyle 不使用全局 scaler，这里仅保留接口一致性。
         return data

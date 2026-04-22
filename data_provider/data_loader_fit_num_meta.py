@@ -1,9 +1,7 @@
-"""
-FIT 数值流 + 元数据 loader。
+"""FIT 数值流数据集。
 
-说明：
-- 纯数值模型和数值+meta 模型目前都复用这一个 dataset。
-- dataset 始终返回完整的 FIT 元数据四元组，是否使用由模型侧决定。
+无论是否启用 metadata-aware 模型，这个 dataset 都统一返回
+完整的 FIT 元数据四元组，具体使用哪些字段由模型侧决定。
 """
 
 import numpy as np
@@ -34,6 +32,7 @@ class Dataset_DualSG_Fit_Num_Meta(Dataset):
         max_samples=-1,
         fit_scaler_mode="train_only",
     ):
+        del timeenc, freq, seasonal_patterns, test_ratio
         assert flag in ["train", "val", "test"]
 
         self.flag = flag
@@ -44,7 +43,6 @@ class Dataset_DualSG_Fit_Num_Meta(Dataset):
         self.scale = scale
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
-        self.test_ratio = test_ratio
         self.fit_scaler_mode = fit_scaler_mode
 
         if size is None:
@@ -94,6 +92,7 @@ class Dataset_DualSG_Fit_Num_Meta(Dataset):
         log(f"[FIT-Meta][{self.flag}] scaler_mode={self.fit_scaler_mode}")
 
     def __getitem__(self, index):
+        # 始终返回完整元数据，方便纯数值流与带元数据版本复用同一 loader。
         return (
             self.series[index].reshape(-1, 1),
             self.targets[index].reshape(-1, 1),
@@ -109,6 +108,8 @@ class Dataset_DualSG_Fit_Num_Meta(Dataset):
         return len(self.series)
 
     def inverse_transform(self, data):
+        # 与融合流保持相同的反归一化接口。
         if not self.scale or self.scaler is None:
             return data
-        return self.scaler.inverse_transform(np.asarray(data).reshape(-1, 1)).reshape(np.asarray(data).shape)
+        array = np.asarray(data)
+        return self.scaler.inverse_transform(array.reshape(-1, 1)).reshape(array.shape)

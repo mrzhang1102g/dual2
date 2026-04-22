@@ -1,19 +1,15 @@
 """
-FIT 融合模型。
+FIT fusion model with a unified direct/residual design.
 
-当前支持两套 fusion 头：
+The numerical backbone remains unchanged, while the text branch is used
+through two modes:
 
-- modern:
-  文本先调制数值 backbone 的中间特征，再走 direct / residual 两条路径。
-- legacy:
-  恢复旧版浅融合头。
-  - direct: y_final = (1 - w) * y_num + w * y_text
-  - residual: y_final = y_num + gain * delta_y
-
-共同约束：
-- 数值主干始终复用 `Model_Fit_Num_With_Meta`
-- 文本输入始终是预处理好的 `caption_emb`
-- `disable_text=True` 时统一退化为纯数值预测，并冻结所有非数值参数
+- direct:
+  Numerical and text streams each produce a forecast, and a learned gate mixes
+  them step-wise.
+- residual:
+  Numerical features produce residual bases, and the text branch controls the
+  basis coefficients and correction radius.
 """
 
 from copy import deepcopy
@@ -42,19 +38,28 @@ def _to_bool(value, default=False):
 
 
 class Model_Fit_Fusion(nn.Module):
-    """FIT fusion 统一入口，内部按 `fusion_version` 选择 modern / legacy。"""
+    """
+    Unified FIT fusion model.
+
+    `direct`
+        Numerical and text streams each produce a forecast.
+        Final prediction uses an explicit step-wise gate:
+        y_final = (1 - gate) * y_num + gate * y_text
+
+    `residual`
+        Numerical side only produces residual bases.
+        Text side produces basis coefficients and correction radius.
+        Final correction must pass through text:
+        y_final = y_num + radius * tanh(sum_k basis_k * coeff_k)
+    """
 
     def __init__(self, configs, numerical_ckpt_path=None):
         super().__init__()
 
         self.configs = configs
-        self.pred_len = configs.pred_len
-        self.num_channels = getattr(configs, "enc_in", 1)
+        self.pred_len = int(configs.pred_len)
+        self.num_channels = int(getattr(configs, "enc_in", 1))
         self.output_dim = self.pred_len * self.num_channels
-
-        self.fusion_version = getattr(configs, "fusion_version", "modern")
-        if self.fusion_version not in {"modern", "legacy"}:
-            raise ValueError(f"[Fit-Fusion] Unsupported fusion_version: {self.fusion_version}")
 
         self.text_mode = getattr(configs, "text_mode", "direct")
         if self.text_mode not in {"direct", "residual"}:
@@ -63,35 +68,26 @@ class Model_Fit_Fusion(nn.Module):
         self.freeze_numerical = _to_bool(getattr(configs, "freeze_numerical", False), False)
         self.disable_text = _to_bool(getattr(configs, "disable_text", False), False)
 
+        self.text_hidden = int(getattr(configs, "text_hidden", 128))
+        self.residual_rank = int(getattr(configs, "residual_rank", 8))
         self.num_feat_dim = int(getattr(configs, "num_feat_dim", max(self.pred_len, 24)))
         self.fusion_hidden = int(getattr(configs, "fusion_hidden", max(self.pred_len * 4, 96)))
         self.fusion_dropout = float(getattr(configs, "fusion_dropout", 0.1))
 
-        # legacy 兼容参数。modern 分支会忽略这些开关。
-        self.llm_dim = int(getattr(configs, "llm_dim", 768))
-        self.direct_w_mode = getattr(configs, "direct_w_mode", "learned")
-        self.direct_w_fixed = float(getattr(configs, "direct_w_fixed", 0.5))
-        self.use_vol_prior = _to_bool(getattr(configs, "use_vol_prior", True), True)
-        self.force_gain = float(getattr(configs, "force_gain", -1.0))
-        self.delta_scale = float(getattr(configs, "delta_scale", 1.0))
-        self.alpha = float(getattr(configs, "alpha", 1.0))
-
         self.numerical_model = self._build_numerical_backbone(configs, numerical_ckpt_path)
-        d_model = self.numerical_model.d_model
+        self.backbone_dim = int(self.numerical_model.d_model)
 
-        if self.fusion_version == "modern":
-            self._init_modern_modules(d_model)
-        else:
-            self._init_legacy_modules()
+        self._init_shared_modules()
+        self._init_direct_modules()
+        self._init_residual_modules()
 
         self.aux_loss = None
-
         if self.disable_text:
             self._freeze_non_numerical_parameters()
 
     def _build_numerical_backbone(self, configs, numerical_ckpt_path):
-        num_cfg = deepcopy(configs)
-        numerical_model = FitNumericalModel(num_cfg)
+        numerical_cfg = deepcopy(configs)
+        numerical_model = FitNumericalModel(numerical_cfg)
 
         if numerical_ckpt_path:
             ckpt = torch.load(numerical_ckpt_path, map_location="cpu")
@@ -106,123 +102,93 @@ class Model_Fit_Fusion(nn.Module):
 
         return numerical_model
 
-    def _init_modern_modules(self, d_model):
-        context_dim = self.num_feat_dim
-        shared_hidden = self.fusion_hidden
+    def _init_shared_modules(self):
         dropout = self.fusion_dropout
 
-        # modern 分支允许预处理 embedding 维度自动适配。
-        self.text_adapter = nn.Sequential(
-            nn.LazyLinear(context_dim * 2),
+        # 先把离线文本向量投影到当前融合空间。
+        self.text_proj = nn.Sequential(
+            nn.LazyLinear(self.text_hidden * 2),
             nn.GELU(),
-            nn.LayerNorm(context_dim * 2),
+            nn.LayerNorm(self.text_hidden * 2),
             nn.Dropout(dropout),
-            nn.Linear(context_dim * 2, context_dim),
+            nn.Linear(self.text_hidden * 2, self.text_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.text_hidden),
         )
-
-        self.text_to_gamma = nn.Linear(context_dim, d_model)
-        self.text_to_beta = nn.Linear(context_dim, d_model)
-        self.latent_norm = nn.LayerNorm(d_model)
 
         self.summary_proj = nn.Sequential(
-            nn.Linear(d_model * 2, context_dim * 2),
+            nn.Linear(self.backbone_dim, self.fusion_hidden),
             nn.GELU(),
-            nn.LayerNorm(context_dim * 2),
+            nn.LayerNorm(self.fusion_hidden),
             nn.Dropout(dropout),
-            nn.Linear(context_dim * 2, context_dim),
         )
-
         self.y_num_proj = nn.Sequential(
-            nn.Linear(self.output_dim, context_dim * 2),
+            nn.Linear(self.output_dim, self.fusion_hidden),
             nn.GELU(),
-            nn.LayerNorm(context_dim * 2),
+            nn.LayerNorm(self.fusion_hidden),
             nn.Dropout(dropout),
-            nn.Linear(context_dim * 2, context_dim),
         )
-
-        # 历史统计：last / mean / std / slope / range
         self.hist_proj = nn.Sequential(
-            nn.Linear(self.num_channels * 5, context_dim * 2),
+            nn.Linear(self.num_channels * 5, self.fusion_hidden),
             nn.GELU(),
-            nn.LayerNorm(context_dim * 2),
+            nn.LayerNorm(self.fusion_hidden),
             nn.Dropout(dropout),
-            nn.Linear(context_dim * 2, context_dim),
         )
-
-        self.fusion_mlp = nn.Sequential(
-            nn.Linear(context_dim * 4, shared_hidden),
+        self.encoded_proj = nn.Sequential(
+            nn.LazyLinear(self.fusion_hidden),
             nn.GELU(),
-            nn.LayerNorm(shared_hidden),
-            nn.Dropout(dropout),
-            nn.Linear(shared_hidden, shared_hidden),
-            nn.GELU(),
-            nn.LayerNorm(shared_hidden),
+            nn.LayerNorm(self.fusion_hidden),
             nn.Dropout(dropout),
         )
 
-        self.direct_head = nn.Sequential(
-            nn.Linear(shared_hidden, shared_hidden),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(shared_hidden, self.output_dim),
-        )
-
-        self.residual_head = nn.Sequential(
-            nn.Linear(shared_hidden, shared_hidden),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(shared_hidden, self.output_dim),
-        )
-
-        # modern residual 用历史波动为纠偏幅度做上界约束。
-        self.radius_head = nn.Sequential(
-            nn.Linear(shared_hidden, shared_hidden),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(shared_hidden, self.output_dim),
-        )
-
-    def _init_legacy_modules(self):
+    def _init_direct_modules(self):
         dropout = self.fusion_dropout
-        hidden = self.fusion_hidden
+        gate_in_dim = self.text_hidden + self.fusion_hidden * 3
 
-        self.text_pred_proj = nn.Sequential(
-            nn.Linear(self.llm_dim, self.pred_len * 2),
-            nn.ReLU(),
-            nn.Linear(self.pred_len * 2, self.pred_len),
-        )
-        self.text_weight = nn.Parameter(torch.ones(self.num_channels) * -1.0)
-
-        self.num_feat_proj = nn.Sequential(
-            nn.Linear(self.output_dim, self.num_feat_dim),
+        self.direct_text_head = nn.Sequential(
+            nn.Linear(self.text_hidden, self.fusion_hidden),
             nn.GELU(),
-            nn.LayerNorm(self.num_feat_dim),
+            nn.LayerNorm(self.fusion_hidden),
             nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.output_dim),
         )
 
-        self.fusion_in_dim = self.llm_dim + self.num_feat_dim + 1
-
-        self.delta_proj = nn.Sequential(
-            nn.Linear(self.fusion_in_dim, hidden),
+        self.direct_gate_head = nn.Sequential(
+            nn.Linear(gate_in_dim, self.fusion_hidden),
             nn.GELU(),
-            nn.LayerNorm(hidden),
+            nn.LayerNorm(self.fusion_hidden),
             nn.Dropout(dropout),
-            nn.Linear(hidden, self.pred_len),
+            nn.Linear(self.fusion_hidden, self.output_dim),
         )
 
-        self.gain_net = nn.Sequential(
-            nn.Linear(self.fusion_in_dim, hidden),
+    def _init_residual_modules(self):
+        dropout = self.fusion_dropout
+        basis_in_dim = self.fusion_hidden * 4
+        radius_in_dim = self.text_hidden + self.fusion_hidden
+
+        self.residual_basis_head = nn.Sequential(
+            nn.Linear(basis_in_dim, self.fusion_hidden),
             nn.GELU(),
-            nn.LayerNorm(hidden),
+            nn.LayerNorm(self.fusion_hidden),
             nn.Dropout(dropout),
-            nn.Linear(hidden, self.pred_len),
+            nn.Linear(self.fusion_hidden, self.output_dim * self.residual_rank),
         )
 
-        # 旧版 residual 初始化得很保守，避免一开始就把数值主预测拉偏。
-        nn.init.zeros_(self.gain_net[-1].weight)
-        nn.init.constant_(self.gain_net[-1].bias, -4.0)
-        nn.init.zeros_(self.delta_proj[-1].weight)
-        nn.init.zeros_(self.delta_proj[-1].bias)
+        self.residual_text_coeff_head = nn.Sequential(
+            nn.Linear(self.text_hidden, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.pred_len * self.residual_rank),
+        )
+
+        self.residual_radius_head = nn.Sequential(
+            nn.Linear(radius_in_dim, self.fusion_hidden),
+            nn.GELU(),
+            nn.LayerNorm(self.fusion_hidden),
+            nn.Dropout(dropout),
+            nn.Linear(self.fusion_hidden, self.output_dim),
+        )
 
     def _freeze_non_numerical_parameters(self):
         for name, param in self.named_parameters():
@@ -232,7 +198,6 @@ class Model_Fit_Fusion(nn.Module):
     def train(self, mode=True):
         super().train(mode)
         if self.freeze_numerical:
-            # 外层即使切回 train，冻结的数值 backbone 也保持 eval。
             self.numerical_model.eval()
         return self
 
@@ -269,7 +234,17 @@ class Model_Fit_Fusion(nn.Module):
             "flat": torch.cat([last_value, mean_value, std_value, slope_value, range_value], dim=-1),
         }
 
-    def _extract_numerical_features(self, x_enc, x_mark_enc, x_dec, x_mark_dec, city_id, gender_id, age_id, element_id):
+    def _extract_numerical_features(
+        self,
+        x_enc,
+        x_mark_enc,
+        x_dec,
+        x_mark_dec,
+        city_id,
+        gender_id,
+        age_id,
+        element_id,
+    ):
         if self.freeze_numerical:
             self.numerical_model.eval()
             with torch.no_grad():
@@ -297,54 +272,52 @@ class Model_Fit_Fusion(nn.Module):
             caption_emb=None,
         )
 
-    def _modulate_latent(self, encoded_tokens, text_ctx):
-        gamma = torch.tanh(self.text_to_gamma(text_ctx)).unsqueeze(1).unsqueeze(1)
-        beta = self.text_to_beta(text_ctx).unsqueeze(1).unsqueeze(1)
-        return self.latent_norm(encoded_tokens * (1.0 + gamma) + beta)
-
-    def _build_modern_shared_context(self, caption_emb, numerical_features, x_enc):
+    def _build_numerical_contexts(self, numerical_features, history_features):
         y_num = numerical_features["forecast"]
         encoded_tokens = numerical_features["encoded_tokens"]
         summary_state = numerical_features["summary_state"]
-
         batch_size = y_num.shape[0]
-        history_features = self._compute_history_features(x_enc)
 
-        text_ctx = self.text_adapter(caption_emb)
-        modulated_tokens = self._modulate_latent(encoded_tokens, text_ctx)
-        modulated_summary = modulated_tokens.mean(dim=(1, 2))
-
-        summary_ctx = self.summary_proj(torch.cat([summary_state, modulated_summary], dim=-1))
         y_num_ctx = self.y_num_proj(y_num.reshape(batch_size, self.output_dim))
+        summary_ctx = self.summary_proj(summary_state)
         hist_ctx = self.hist_proj(history_features["flat"].float())
 
-        shared_context = self.fusion_mlp(torch.cat([text_ctx, summary_ctx, y_num_ctx, hist_ctx], dim=-1))
-        return shared_context, y_num, history_features
+        # 编码后的 patch token 与全局 summary 分开保留，方便后续残差分支使用。
+        encoded_summary = encoded_tokens.mean(dim=2).reshape(batch_size, -1)
+        encoded_ctx = self.encoded_proj(encoded_summary)
 
-    def _apply_modern_direct(self, shared_context, y_num):
+        return {
+            "y_num_ctx": y_num_ctx,
+            "summary_ctx": summary_ctx,
+            "hist_ctx": hist_ctx,
+            "encoded_ctx": encoded_ctx,
+        }
+
+    def _apply_direct(self, text_ctx, numerical_features, numerical_contexts):
+        # direct 模式下，文本分支直接产出一条完整预测，再与数值流做门控混合。
+        y_num = numerical_features["forecast"]
         batch_size = y_num.shape[0]
-        self.aux_loss = None
-        return self._reshape_output(
-            self.direct_head(shared_context),
+
+        y_text = self._reshape_output(
+            self.direct_text_head(text_ctx),
             batch_size,
             self.pred_len,
             self.num_channels,
             y_num.dtype,
         )
 
-    def _apply_modern_residual(self, shared_context, y_num, history_features):
-        batch_size = y_num.shape[0]
-
-        raw_delta = self._reshape_output(
-            self.residual_head(shared_context),
-            batch_size,
-            self.pred_len,
-            self.num_channels,
-            y_num.dtype,
+        gate_input = torch.cat(
+            [
+                text_ctx,
+                numerical_contexts["summary_ctx"],
+                numerical_contexts["y_num_ctx"],
+                numerical_contexts["hist_ctx"],
+            ],
+            dim=-1,
         )
-        radius_gate = torch.sigmoid(
+        gate = torch.sigmoid(
             self._reshape_output(
-                self.radius_head(shared_context),
+                self.direct_gate_head(gate_input),
                 batch_size,
                 self.pred_len,
                 self.num_channels,
@@ -352,80 +325,51 @@ class Model_Fit_Fusion(nn.Module):
             )
         )
 
-        history_std = history_features["std"].unsqueeze(1)
-        history_range = history_features["range"].unsqueeze(1)
-        radius = (history_std + radius_gate * history_range).clamp_min(1e-4)
-        delta = torch.tanh(raw_delta) * radius
+        self.aux_loss = None
+        return (1.0 - gate) * y_num + gate * y_text
 
+    def _apply_residual(self, text_ctx, numerical_features, numerical_contexts):
+        # residual 模式下，文本只负责控制“改多少”，不直接替代数值主干。
+        y_num = numerical_features["forecast"]
+        batch_size = y_num.shape[0]
+
+        basis_input = torch.cat(
+            [
+                numerical_contexts["encoded_ctx"],
+                numerical_contexts["summary_ctx"],
+                numerical_contexts["y_num_ctx"],
+                numerical_contexts["hist_ctx"],
+            ],
+            dim=-1,
+        )
+        residual_basis = self.residual_basis_head(basis_input).reshape(
+            batch_size,
+            self.pred_len,
+            self.num_channels,
+            self.residual_rank,
+        )
+
+        text_coeff = self.residual_text_coeff_head(text_ctx).reshape(
+            batch_size,
+            self.pred_len,
+            self.residual_rank,
+        )
+        delta_raw = torch.einsum("blcr,blr->blc", residual_basis, text_coeff.to(dtype=residual_basis.dtype))
+
+        radius_input = torch.cat([text_ctx, numerical_contexts["hist_ctx"]], dim=-1)
+        radius = torch.sigmoid(
+            self._reshape_output(
+                self.residual_radius_head(radius_input),
+                batch_size,
+                self.pred_len,
+                self.num_channels,
+                y_num.dtype,
+            )
+        )
+
+        delta = radius * torch.tanh(delta_raw.to(dtype=y_num.dtype))
         self.aux_loss = None
         return y_num + delta
-
-    def _build_w(self, channel_count, device, dtype):
-        if self.direct_w_mode == "fixed":
-            w_scalar = max(0.0, min(1.0, float(self.direct_w_fixed)))
-            return torch.full((1, 1, channel_count), w_scalar, device=device, dtype=dtype)
-
-        w = torch.sigmoid(self.text_weight).to(device=device, dtype=dtype)
-        if w.numel() == 1:
-            return w.view(1, 1, 1).expand(1, 1, channel_count)
-        return w[:channel_count].view(1, 1, channel_count)
-
-    def _pad_or_trim_y_num_flat(self, y_num_flat):
-        if y_num_flat.shape[1] == self.output_dim:
-            return y_num_flat
-        if y_num_flat.shape[1] > self.output_dim:
-            return y_num_flat[:, : self.output_dim]
-        pad_size = self.output_dim - y_num_flat.shape[1]
-        return torch.cat([y_num_flat, y_num_flat.new_zeros(y_num_flat.shape[0], pad_size)], dim=1)
-
-    def _build_legacy_vol(self, x_enc):
-        batch_size = x_enc.shape[0]
-        sample_stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
-        base_stdev = sample_stdev.mean(dim=2, keepdim=True)
-        return base_stdev.view(batch_size, 1)
-
-    def _apply_legacy_direct(self, caption_emb, y_num):
-        batch_size, _, channel_count = y_num.shape
-
-        y_text = self.text_pred_proj(caption_emb).to(dtype=y_num.dtype).unsqueeze(-1)
-        if channel_count > 1:
-            y_text = y_text.expand(-1, -1, channel_count)
-
-        w = self._build_w(channel_count, device=y_num.device, dtype=y_num.dtype)
-        self.aux_loss = None
-        return (1.0 - w) * y_num + w * y_text
-
-    def _apply_legacy_residual(self, caption_emb, y_num, x_enc):
-        batch_size, _, channel_count = y_num.shape
-        vol = self._build_legacy_vol(x_enc)
-
-        y_num_flat = self._pad_or_trim_y_num_flat(y_num.reshape(batch_size, self.pred_len * channel_count))
-        num_feat = self.num_feat_proj(y_num_flat.detach())
-
-        vol_input = vol.float() if self.use_vol_prior else torch.zeros_like(vol, dtype=torch.float32)
-        fusion_in = torch.cat([caption_emb, num_feat.float(), vol_input], dim=-1)
-
-        delta_y = self.delta_proj(fusion_in) * self.delta_scale
-
-        if self.force_gain >= 0:
-            gain = torch.full(
-                (batch_size, self.pred_len),
-                self.force_gain,
-                device=y_num.device,
-                dtype=delta_y.dtype,
-            )
-        else:
-            gain = torch.sigmoid(self.gain_net(fusion_in))
-
-        delta_y = delta_y.to(dtype=y_num.dtype).unsqueeze(-1)
-        gain = gain.to(dtype=y_num.dtype).unsqueeze(-1)
-
-        if channel_count > 1:
-            delta_y = delta_y.expand(-1, -1, channel_count)
-            gain = gain.expand(-1, -1, channel_count)
-
-        self.aux_loss = None
-        return y_num + gain * delta_y
 
     def forward(
         self,
@@ -464,14 +408,10 @@ class Model_Fit_Fusion(nn.Module):
             self.aux_loss = None
             return y_num
 
-        if self.fusion_version == "modern":
-            shared_context, y_num, history_features = self._build_modern_shared_context(
-                caption_emb, numerical_features, x_enc
-            )
-            if self.text_mode == "direct":
-                return self._apply_modern_direct(shared_context, y_num)
-            return self._apply_modern_residual(shared_context, y_num, history_features)
+        history_features = self._compute_history_features(x_enc)
+        numerical_contexts = self._build_numerical_contexts(numerical_features, history_features)
+        text_ctx = self.text_proj(caption_emb)
 
         if self.text_mode == "direct":
-            return self._apply_legacy_direct(caption_emb, y_num)
-        return self._apply_legacy_residual(caption_emb, y_num, x_enc)
+            return self._apply_direct(text_ctx, numerical_features, numerical_contexts)
+        return self._apply_residual(text_ctx, numerical_features, numerical_contexts)

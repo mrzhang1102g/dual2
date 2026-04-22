@@ -13,6 +13,10 @@ dataset/**/*.json
 dataset/**/*.jsonl
 dataset/**/*.pt
 
+# 忽略所有临时文件
+*.tmp
+dataset/FIT_DualSG/llm_route2_outputs/
+
 # 其他常见忽略项
 __pycache__/
 *.pyc

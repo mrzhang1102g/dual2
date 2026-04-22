@@ -1,10 +1,7 @@
-"""
-FIT 数据集公共工具。
+"""FIT 数据集公共工具。
 
-职责：
-1. 统一 FIT 数值流 / 融合流的数据解析逻辑，避免多个 loader 重复维护。
-2. 提供默认关闭的小样本裁剪能力，方便本地 CPU smoke。
-3. 统一管理 FIT 的标准化策略，默认采用 train-only scaler。
+负责统一解析全量 json、构建元数据映射、执行 split，
+并管理 caption embedding 与 scaler 的复用缓存。
 """
 
 import json
@@ -50,7 +47,7 @@ _FIT_SCALER_CACHE = {}
 
 
 def _normalize_limit(max_samples):
-    """把样本上限统一成 int；<=0 表示不截断。"""
+    """把样本上限规整成 int；非正数表示不截断。"""
     if max_samples is None:
         return -1
     max_samples = int(max_samples)
@@ -58,12 +55,7 @@ def _normalize_limit(max_samples):
 
 
 def load_fit_json(root_path, data_path):
-    """
-    读取 FIT 原始 json，并在进程内缓存。
-
-    `fit_dualsg_all.json` 很大，train/val/test 会在同一进程内重复读取多次；
-    这里缓存后，至少不再反复做磁盘解析。
-    """
+    """读取 FIT 原始 json，并在进程内缓存。"""
     full_path = os.path.normpath(os.path.join(root_path, data_path))
     if full_path not in _FIT_JSON_CACHE:
         with open(full_path, "r", encoding="utf-8") as file:
@@ -72,7 +64,7 @@ def load_fit_json(root_path, data_path):
 
 
 def build_fit_element_map(full_data):
-    """基于完整数据构建 element -> id 映射，保证 train/val/test 一致。"""
+    """基于完整数据构建 element -> id 映射，保证各 split 一致。"""
     element_map = {}
     for item in full_data:
         element = item.get("metadata", {}).get("element", "unknown")
@@ -82,13 +74,7 @@ def build_fit_element_map(full_data):
 
 
 def build_fit_sample_indices(total, data_path, flag, train_ratio, val_ratio, max_samples=-1):
-    """
-    先按正式 split 取样本，再按本地 smoke 上限截断。
-
-    约定：
-    - max_samples <= 0: 不截断
-    - 截断永远发生在 split 之后，不影响正式训练语义
-    """
+    """先按正式 split 取索引，再应用本地 smoke 的样本上限。"""
     all_mode = is_all_mode(data_path)
     train_size = int(total * train_ratio)
     val_size = int(total * val_ratio)
@@ -129,13 +115,7 @@ def _collect_series_from_indices(full_data, sample_indices):
 
 
 def _get_train_only_scaler(full_data, root_path, data_path, train_ratio, val_ratio):
-    """
-    只使用 train split 拟合 scaler，并缓存。
-
-    这是当前 FIT 默认策略，目的是：
-    - 避免 val/test 看见自己的分布统计
-    - 保证 train/val/test 共用同一缩放基准
-    """
+    """只使用 train split 拟合 scaler，并缓存结果。"""
     cache_key = _build_scaler_cache_key(root_path, data_path, train_ratio, val_ratio, "train_only")
     if cache_key in _FIT_SCALER_CACHE:
         return _FIT_SCALER_CACHE[cache_key]
@@ -144,7 +124,7 @@ def _get_train_only_scaler(full_data, root_path, data_path, train_ratio, val_rat
         train_size = int(len(full_data) * train_ratio)
         train_indices = list(range(train_size))
     else:
-        # 非 all 模式下无法从单个 data_path 推断独立 train 文件，这里退化为对当前文件拟合。
+        # 非 all 模式下无法从单文件反推出独立训练集，只能退化为对当前文件拟合。
         train_indices = list(range(len(full_data)))
 
     train_series = _collect_series_from_indices(full_data, train_indices)
@@ -188,13 +168,7 @@ def prepare_fit_dataset(
     max_samples=-1,
     fit_scaler_mode="train_only",
 ):
-    """
-    把 FIT loader 需要的公共字段一次性准备好。
-
-    `fit_scaler_mode` 约定：
-    - `train_only`: 默认，只用 train split 拟合 scaler
-    - `split_fit`: 兼容旧逻辑，每个 split 各自拟合 scaler
-    """
+    """一次性准备 FIT loader 需要的公共字段。"""
     full_data = load_fit_json(root_path, data_path)
     split_info = build_fit_sample_indices(
         total=len(full_data),
@@ -276,7 +250,7 @@ def prepare_fit_dataset(
 
 
 def load_fit_caption_embeddings(caption_emb_path, sample_indices):
-    """按 sample_indices 对齐离线文本 embedding。"""
+    """按 `sample_indices` 对齐离线文本 embedding。"""
     caption_emb_path = os.path.normpath(caption_emb_path)
     if caption_emb_path not in _FIT_CAPTION_CACHE:
         full_emb = torch.load(caption_emb_path, map_location="cpu")
@@ -292,7 +266,7 @@ def load_fit_caption_embeddings(caption_emb_path, sample_indices):
     if full_emb.shape[0] <= max_index:
         raise ValueError(
             f"caption_emb rows={full_emb.shape[0]} <= required max index={max_index}. "
-            "请确认 embedding 与原始 json 来自同一顺序。"
+            "请确认 embedding 与原始 json 使用同一顺序。"
         )
 
     return full_emb[sample_indices].float()

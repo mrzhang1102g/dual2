@@ -1,9 +1,7 @@
-"""
-FIT 融合流 loader。
+"""FIT 融合流数据集。
 
-当前文本流仍是离线 caption embedding 路线：
-- 先从 FIT 原始 json 中读取数值序列与元数据
-- 再按同一组 sample_indices 对齐 caption_emb
+先从 FIT json 读取数值序列和元数据，再按同一组 sample indices
+对齐离线生成的 caption embedding。
 """
 
 import numpy as np
@@ -35,6 +33,7 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
         max_samples=-1,
         fit_scaler_mode="train_only",
     ):
+        del timeenc, freq, seasonal_patterns, test_ratio
         assert flag in ["train", "val", "test"]
         if caption_emb_path is None:
             raise ValueError("caption_emb_path must be provided for FIT_Fusion")
@@ -48,7 +47,6 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
         self.caption_emb_path = caption_emb_path
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
-        self.test_ratio = test_ratio
         self.fit_scaler_mode = fit_scaler_mode
 
         if size is None:
@@ -98,11 +96,13 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
         )
         log(f"[FIT-Fusion][{self.flag}] scaler_mode={self.fit_scaler_mode}")
 
+        # caption embedding 必须与当前 split 的 sample_indices 严格对齐。
         log(f"[FIT-Fusion] Loading caption embedding from: {self.caption_emb_path}")
         self.caption_emb = load_fit_caption_embeddings(self.caption_emb_path, self.sample_indices)
         log(f"[FIT-Fusion] caption_emb aligned: {tuple(self.caption_emb.shape)}")
 
     def __getitem__(self, index):
+        # 末尾追加 caption_emb，前 8 项的顺序与数值流保持稳定。
         return (
             self.series[index].reshape(-1, 1),
             self.targets[index].reshape(-1, 1),
@@ -119,6 +119,8 @@ class Dataset_DualSG_Fit_Fusion(Dataset):
         return len(self.series)
 
     def inverse_transform(self, data):
+        # FIT 在可视化和保存结果时走统一反归一化入口。
         if not self.scale or self.scaler is None:
             return data
-        return self.scaler.inverse_transform(np.asarray(data).reshape(-1, 1)).reshape(np.asarray(data).shape)
+        array = np.asarray(data)
+        return self.scaler.inverse_transform(array.reshape(-1, 1)).reshape(array.shape)
