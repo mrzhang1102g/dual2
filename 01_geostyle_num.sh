@@ -8,7 +8,7 @@ python run.py \
   --is_training 1 \
   --model_id geostyle_num \
   --model Model_Geo_Num \
-  --data GeoStyle \
+  --data Geo_Meta \
   --root_path ./dataset/ \
   --data_path Geo_DualSG/geo_dualsg_all.json \
   --inverse \

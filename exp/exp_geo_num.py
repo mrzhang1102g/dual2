@@ -37,7 +37,7 @@ class Exp_Geo_Num(Exp_Basic):
 
     def _get_data(self, flag):
         data_set, data_loader = data_provider(self.args, flag)
-        self.log(f"[{flag.upper()}] {len(data_set)} samples (Geo_Meta)")
+        self.log(f"[{flag.upper()}] {len(data_set)} samples ({self.args.data})")
         return data_set, data_loader
 
     def _select_optimizer(self):
@@ -74,6 +74,27 @@ class Exp_Geo_Num(Exp_Basic):
         dec_inp = torch.cat([batch_y[:, : self.args.label_len, :], dec_inp], dim=1).to(self.device)
         return dec_inp
 
+    def _forward_model(self, batch_x, batch_x_mark, dec_inp, batch_y_mark, element_ids, group_ids):
+        module = self.model.module if hasattr(self.model, "module") else self.model
+
+        if isinstance(module, Model_Geo_Num_With_Meta):
+            return self.model(
+                batch_x,
+                batch_x_mark,
+                dec_inp,
+                batch_y_mark,
+                element_ids=element_ids,
+                group_ids=group_ids,
+                caption_emb=None,
+            )
+
+        return self.model(
+            batch_x,
+            batch_x_mark,
+            dec_inp,
+            batch_y_mark,
+        )
+
     def vali(self, vali_loader, criterion, desc="Validation"):
         self.model.eval()
         losses = []
@@ -84,14 +105,13 @@ class Exp_Geo_Num(Exp_Basic):
                 batch_x, batch_y, batch_x_mark, batch_y_mark, element_ids, group_ids, norms = self._move_batch_to_device(batch)
                 dec_inp = self._build_dec_inp(batch_y)
 
-                outputs = self.model(
+                outputs = self._forward_model(
                     batch_x,
                     batch_x_mark,
                     dec_inp,
                     batch_y_mark,
-                    element_ids=element_ids,
-                    group_ids=group_ids,
-                    caption_emb=None,
+                    element_ids,
+                    group_ids,
                 )
 
                 f_dim = -1 if self.args.features == "MS" else 0
@@ -128,14 +148,13 @@ class Exp_Geo_Num(Exp_Basic):
                 batch_x, batch_y, batch_x_mark, batch_y_mark, element_ids, group_ids, norms = self._move_batch_to_device(batch)
                 dec_inp = self._build_dec_inp(batch_y)
 
-                outputs = self.model(
+                outputs = self._forward_model(
                     batch_x,
                     batch_x_mark,
                     dec_inp,
                     batch_y_mark,
-                    element_ids=element_ids,
-                    group_ids=group_ids,
-                    caption_emb=None,
+                    element_ids,
+                    group_ids,
                 )
 
                 f_dim = -1 if self.args.features == "MS" else 0
@@ -194,14 +213,13 @@ class Exp_Geo_Num(Exp_Basic):
                 batch_x, batch_y, batch_x_mark, batch_y_mark, element_ids, group_ids, norms = self._move_batch_to_device(batch)
                 dec_inp = self._build_dec_inp(batch_y)
 
-                outputs = self.model(
+                outputs = self._forward_model(
                     batch_x,
                     batch_x_mark,
                     dec_inp,
                     batch_y_mark,
-                    element_ids=element_ids,
-                    group_ids=group_ids,
-                    caption_emb=None,
+                    element_ids,
+                    group_ids,
                 )
 
                 f_dim = -1 if self.args.features == "MS" else 0
